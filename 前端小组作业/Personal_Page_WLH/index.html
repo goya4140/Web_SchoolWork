@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>王邻皓 - 个人主页</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+  <!-- ========== 导航栏 ========== -->
+  <nav id="navbar">
+    <div class="nav-inner">
+      <span class="nav-logo">WLH</span>
+      <ul class="nav-links">
+        <li><a href="#about"        class="nav-link">关于我</a></li>
+        <li><a href="#publications" class="nav-link">论文发表</a></li>
+        <li><a href="#projects"     class="nav-link">工程项目</a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <!-- ========== 关于我 ========== -->
+  <section id="about" class="section fade-target">
+    <div class="about-wrap">
+
+      <div class="avatar-box">
+        <img
+          src="images/wanglinhao.jpg"
+          alt="王邻皓头像"
+          id="avatar"
+          onerror="this.style.display='none'; document.getElementById('avatar-fallback').style.display='flex';"
+        />
+        <div id="avatar-fallback" class="avatar-fallback">WLH</div>
+      </div>
+
+      <div class="about-text">
+        <h1 class="name">王邻皓</h1>
+        <p class="subtitle">
+          <span id="typing-output"></span><span class="cursor">|</span>
+        </p>
+        <p class="bio">
+          我是吉林大学计算机科学专业的大二学生，专注于奖励模型与&nbsp;RLHF&nbsp;研究，
+          同时推进多智能体 ToM 推理框架 MACM 的设计，并以框架优先、高执行力的方式
+          在科研、课业与 AI 产品开发之间并行探索。
+        </p>
+        <div class="tags" id="tags-container"></div>
+
+        <!-- 社交图标（GitHub · Email · Google Scholar） -->
+        <div class="social-links">
+          <!-- GitHub -->
+          <a href="https://github.com/goya4140" class="social-btn" title="GitHub" target="_blank" rel="noopener">
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57
+                       0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695
+                       -.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99
+                       .105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225
+                       -.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405
+                       c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225
+                       0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3
+                       0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
+            </svg>
+          </a>
+          <!-- Email -->
+          <a href="mailto:wanglinhao4140@gmail.com" class="social-btn" title="wanglinhao4140@gmail.com">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect x="2" y="4" width="20" height="16" rx="2"/>
+              <path d="M2 7l10 7 10-7"/>
+            </svg>
+          </a>
+          <!-- Google Scholar -->
+          <a href="#" class="social-btn" title="Google Scholar" target="_blank" rel="noopener">
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path d="M12 2L2 7.5l10 5.5 10-5.5L12 2z"/>
+              <path d="M5 10.5v5.5l7 3.5 7-3.5v-5.5" fill="none" stroke="currentColor"
+                    stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+              <circle cx="20.5" cy="7.5" r="1.5"/>
+              <line x1="20.5" y1="9" x2="20.5" y2="14"
+                    stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+            </svg>
+          </a>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ========== 论文发表 ========== -->
+  <section id="publications" class="section fade-target">
+    <h2 class="section-title">论文发表</h2>
+    <!-- 论文卡片由 JS 动态渲染 -->
+    <div class="pub-list" id="pub-list"></div>
+  </section>
+
+  <!-- ========== 工程项目 ========== -->
+  <section id="projects" class="section fade-target">
+    <h2 class="section-title">工程项目</h2>
+    <!-- 项目卡片由 JS 动态渲染 -->
+    <div class="projects-grid" id="projects-grid"></div>
+  </section>
+
+  <!-- ========== 页脚 ========== -->
+  <footer class="footer">
+    <p>&copy; 2026 王邻皓 · Jilin University CS</p>
+  </footer>
+
+  <script src="js/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>我的个人主页</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <!-- 顶部导航栏 -->
+    <header class="header">
+        <div class="container nav-container">
+            <div class="logo">我的主页</div>
+            <nav class="nav">
+                <a href="#home">首页</a>
+                <a href="#about">关于我</a>
+                <a href="#skills">个人技能</a>
+                <a href="#life">校园生活</a>
+                <a href="#contact">联系我</a>
+            </nav>
+            <button id="themeBtn" class="theme-btn">切换主题</button>
+        </div>
+    </header>
+
+    <!-- 首页区域 -->
+    <section id="home" class="hero">
+        <div class="container hero-content">
+            <div class="hero-text">
+                <p class="hello">Hello，欢迎来到我的个人主页</p>
+                <h1>我是 <span>李鹿鸣</span></h1>
+                <h2>一名热爱前端开发的大学生</h2>
+                <p>
+                    我喜欢网页设计、编程学习和记录生活。这个网站是我的前端课程设计作品，
+                    用于展示我的个人信息、技能、作品和校园生活。
+                </p>
+                <div class="hero-buttons">
+                    <a href="#about" class="btn primary-btn">了解我</a>
+                    <a href="#skills" class="btn outline-btn">查看技能</a>
+                </div>
+            </div>
+
+
+        </div>
+    </section>
+
+    <!-- 关于我 -->
+    <section id="about" class="section">
+        <div class="container">
+            <h2 class="section-title">关于我</h2>
+            <div class="about-content">
+                <div class="about-text">
+                    <p>
+                        大家好，我叫李鹿鸣，目前就读于吉林大学计算机科学与技术专业。
+                        我对前端开发、网页设计和交互体验很感兴趣。平时喜欢学习 HTML、CSS、JavaScript，
+                        也喜欢通过实践项目提升自己的动手能力。
+                    </p>
+                    <p>
+                        在学习过程中，我逐渐认识到前端不仅仅是写页面，更重要的是让信息表达更清晰，
+                        让用户使用起来更加方便。未来我希望继续提升自己的编程能力，完成更多有创意的网页作品。
+                    </p>
+                </div>
+
+                <div class="info-box">
+                    <p><strong>姓名：</strong>李鹿鸣</p>
+                    <p><strong>学校：</strong>吉林大学</p>
+                    <p><strong>专业：</strong>计算机科学与技术</p>
+                    <p><strong>年级：</strong>大二</p>
+                    <p><strong>爱好：</strong>编程、音乐、摄影、运动</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 个人技能 -->
+    <section id="skills" class="section gray-section">
+        <div class="container">
+            <h2 class="section-title">个人技能</h2>
+            <div class="skills-grid">
+                <div class="skill-card">
+                    <h3>HTML</h3>
+                    <p>能够使用语义化标签搭建网页结构，理解页面基本组成。</p>
+                    <div class="progress"><span style="width: 85%;"></span></div>
+                </div>
+                <div class="skill-card">
+                    <h3>CSS</h3>
+                    <p>掌握盒模型、Flex 布局、Grid 布局和响应式设计。</p>
+                    <div class="progress"><span style="width: 80%;"></span></div>
+                </div>
+                <div class="skill-card">
+                    <h3>JavaScript</h3>
+                    <p>能够实现简单的页面交互，如按钮点击、表单验证和主题切换。</p>
+                    <div class="progress"><span style="width: 70%;"></span></div>
+                </div>
+                <div class="skill-card">
+                    <h3>网页设计</h3>
+                    <p>注重页面排版、颜色搭配和用户体验，喜欢简洁清晰的设计风格。</p>
+                    <div class="progress"><span style="width: 75%;"></span></div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 校园生活 -->
+    <section id="life" class="section gray-section">
+        <div class="container">
+            <h2 class="section-title">校园生活</h2>
+            <div class="life-content">
+                <div class="life-item">
+                    <h3>课堂学习</h3>
+                    <p>我认真完成专业课程学习，通过课堂和课后练习不断提升自己的理论基础和实践能力。</p>
+                </div>
+                <div class="life-item">
+                    <h3>社团活动</h3>
+                    <p>课余时间我积极参加校园活动，在活动中锻炼沟通能力和团队协作能力。</p>
+                </div>
+                <div class="life-item">
+                    <h3>兴趣爱好</h3>
+                    <p>我喜欢听音乐、摄影和运动，这些爱好让我的大学生活更加丰富多彩。</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 联系我 -->
+    <section id="contact" class="section">
+        <div class="container">
+            <h2 class="section-title">联系我</h2>
+            <div class="contact-content">
+                <div class="contact-info">
+                    <p><strong>邮箱：</strong>1330865200@qq.com</p>
+                    <p><strong>电话：</strong>192-9613-2829</p>
+                    <p><strong>地址：</strong>吉林大学</p>
+                    <p>
+                        如果你对我的个人主页感兴趣，或者希望和我交流前端学习经验，
+                        可以通过以上方式联系我。
+                    </p>
+                </div>
+
+                <form id="messageForm" class="message-form">
+                    <input type="text" id="name" placeholder="请输入你的姓名">
+                    <input type="email" id="email" placeholder="请输入你的邮箱">
+                    <textarea id="message" placeholder="请输入留言内容"></textarea>
+                    <button type="submit" class="btn primary-btn">提交留言</button>
+                </form>
+            </div>
+        </div>
+    </section>
+
+    <!-- 页脚 -->
+    <footer class="footer">
+        <p>© 2026 我的个人主页 | 前端课程设计作品</p>
+    </footer>
+
+    <!-- 返回顶部按钮 -->
+    <button id="topBtn" class="top-btn">↑</button>
+
+    <script src="script.js"></script>
+</body>
+</html>

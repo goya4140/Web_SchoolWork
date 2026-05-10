@@ -1,0 +1,101 @@
+/* 全局样式 */
+body {
+    font-family: 'Microsoft YaHei', Arial, sans-serif;
+    line-height: 1.6;
+    margin: 0;
+    padding: 0;
+    color: #333;
+    background-color: #f5f5f5;
+}
+ 
+/* 头部区域 */
+header {
+    background-color: #2c3e50;
+    color: white;
+    padding: 2rem 0;
+    text-align: center;
+}
+ 
+.profile-container {
+    max-width: 800px;
+    margin: 0 auto;
+}
+ 
+.profile-photo {
+    width: 150px;
+    height: 150px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 3px solid white;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+ 
+h1 {
+    margin-top: 1rem;
+    font-size: 2.2rem;
+}
+ 
+/* 主要内容区 */
+main {
+    max-width: 800px;
+    margin: 2rem auto;
+    padding: 0 1rem;
+}
+ 
+section {
+    background-color: white;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    border-radius: 5px;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+}
+ 
+h2 {
+    color: #2c3e50;
+    border-bottom: 2px solid #eaeaea;
+    padding-bottom: 0.5rem;
+    margin-top: 0;
+}
+ 
+/* 证书展示区 */
+.certificates {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-around;
+    gap: 1rem;
+    margin-top: 1rem;
+}
+ 
+.certificate {
+    max-width: 100%;
+    width: 380px;
+    height: auto;
+    border: 1px solid #ddd;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    transition: transform 0.3s;
+}
+ 
+.certificate:hover {
+    transform: scale(1.02);
+}
+ 
+/* 页脚 */
+footer {
+    text-align: center;
+    padding: 1rem;
+    background-color: #2c3e50;
+    color: white;
+}
+ 
+/* 响应式设计 */
+@media (max-width: 600px) {
+    .certificates {
+        flex-direction: column;
+        align-items: center;
+    }
+    
+    .certificate {
+        width: 100%;
+        margin-bottom: 1rem;
+    }
+}
