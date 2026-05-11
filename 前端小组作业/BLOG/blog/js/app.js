@@ -241,6 +241,66 @@ function renderPost({ id }) {
   document.getElementById("btn-delete-bottom")?.addEventListener("click", doDelete);
 }
 
+/** 团队成员页 — 展示小组3位成员卡片，链接各自个人主页 */
+function renderTeam() {
+  setNavActive("nav-team");
+
+  const members = [
+    {
+      name: "王邻皓",
+      abbr: "WLH",
+      role: "博客作者 · 全栈开发",
+      desc: "热爱科研与技术写作，本 Blog 的创建者与维护者。",
+      url: "../../Personal_Page_WLH/index.html",
+      color: ["#dbeafe", "#1d4ed8"]
+    },
+    {
+      name: "李鹿鸣",
+      abbr: "LLM",
+      role: "前端开发",
+      desc: "热爱前端开发的大学生，擅长音乐、摄影与运动。",
+      url: "../../Personal_Page_LLM/index.html",
+      color: ["#dcfce7", "#15803d"]
+    },
+    {
+      name: "张博瑞",
+      abbr: "ZBR",
+      role: "前端开发",
+      desc: "专注前端技术探索与实践的小组成员。",
+      url: "../../Personal_Page_ZBR/index.html",
+      color: ["#ede9fe", "#6d28d9"]
+    }
+  ];
+
+  const cards = members.map((m, i) => `
+    <div class="team-card fade-card" style="animation-delay:${i * 0.1}s">
+      <div class="team-card-top" style="background:linear-gradient(135deg,${m.color[1]},${m.color[0]})">
+        <div class="team-avatar">${m.abbr}</div>
+      </div>
+      <div class="team-card-body">
+        <h3 class="team-name">${m.name}</h3>
+        <p class="team-role">${m.role}</p>
+        <p class="team-desc">${m.desc}</p>
+        <a href="${m.url}" target="_blank" rel="noopener" class="btn btn-secondary team-btn">
+          访问个人主页 <span class="arrow">→</span>
+        </a>
+      </div>
+    </div>
+  `).join("");
+
+  mount(`
+    <div class="fade-in">
+      <div class="team-header">
+        <h1 class="team-page-title">团队成员</h1>
+        <p class="team-page-sub">小组共 3 位成员，点击卡片访问各自的个人主页</p>
+      </div>
+      <div class="team-grid">
+        ${cards}
+      </div>
+    </div>
+  `);
+}
+
 /** 编辑器页（新建 & 编辑复用同一个组件） */
 function renderEditor({ id } = {}) {
   setNavActive("nav-new");
@@ -414,6 +474,7 @@ document.addEventListener("DOMContentLoaded", () => {
     "/tag/:tag":      p       => renderHome({ tag: p.tag }),
     "/search/:query": p       => renderHome({ query: decodeURIComponent(p.query) }),
     "/post/:id":      p       => renderPost({ id: p.id }),
+    "/team":          ()      => renderTeam(),
     "/new":           ()      => renderEditor(),
     "/edit/:id":      p       => renderEditor({ id: p.id })
   });
