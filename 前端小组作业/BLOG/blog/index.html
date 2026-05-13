@@ -8,22 +8,68 @@
 </head>
 <body>
 
+  <!-- ========== 背景图层（固定，内容滚动时保持不动） ========== -->
+  <div id="bg-layer"></div>
+  <div id="bg-overlay"></div>
+
   <!-- ========== 导航栏 ========== -->
   <nav id="navbar">
     <div class="nav-inner">
       <a href="#/" class="nav-logo">WLH Blog</a>
       <ul class="nav-links">
-        <li><a href="#/"      class="nav-link" id="nav-home">首页</a></li>
-        <li><a href="#/team"  class="nav-link" id="nav-team">团队成员</a></li>
-        <li><a href="#/new"   class="nav-link" id="nav-new">写文章</a></li>
+        <li><a href="#/"     class="nav-link" id="nav-home">首页</a></li>
+        <li><a href="#/team" class="nav-link" id="nav-team">团队成员</a></li>
+        <li><a href="#/new"  class="nav-link" id="nav-new">写文章</a></li>
       </ul>
+      <!-- 图标按钮组：视图切换 + 深色模式 -->
+      <div class="nav-actions">
+        <button class="nav-icon-btn" id="btn-view-toggle" title="切换视图">
+          <!-- 卡片图标（卡片模式时显示） -->
+          <svg id="icon-cards" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+               stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="7" height="7" rx="1"/>
+            <rect x="14" y="3" width="7" height="7" rx="1"/>
+            <rect x="3" y="14" width="7" height="7" rx="1"/>
+            <rect x="14" y="14" width="7" height="7" rx="1"/>
+          </svg>
+          <!-- 时间线图标（时间线模式时显示） -->
+          <svg id="icon-timeline" class="hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+               stroke-linecap="round" stroke-linejoin="round">
+            <line x1="8" y1="6" x2="21" y2="6"/>
+            <line x1="8" y1="12" x2="21" y2="12"/>
+            <line x1="8" y1="18" x2="21" y2="18"/>
+            <circle cx="3" cy="6"  r="1.5" fill="currentColor" stroke="none"/>
+            <circle cx="3" cy="12" r="1.5" fill="currentColor" stroke="none"/>
+            <circle cx="3" cy="18" r="1.5" fill="currentColor" stroke="none"/>
+          </svg>
+        </button>
+        <button class="nav-icon-btn" id="btn-dark-toggle" title="切换深色模式">
+          <!-- 月亮图标（浅色模式时显示） -->
+          <svg id="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+               stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+          </svg>
+          <!-- 太阳图标（深色模式时显示） -->
+          <svg id="icon-sun" class="hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+               stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="5"/>
+            <line x1="12" y1="1"     x2="12" y2="3"/>
+            <line x1="12" y1="21"    x2="12" y2="23"/>
+            <line x1="4.22" y1="4.22"   x2="5.64" y2="5.64"/>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+            <line x1="1"  y1="12" x2="3"  y2="12"/>
+            <line x1="21" y1="12" x2="23" y2="12"/>
+            <line x1="4.22" y1="19.78"  x2="5.64" y2="18.36"/>
+            <line x1="18.36" y1="5.64"  x2="19.78" y2="4.22"/>
+          </svg>
+        </button>
+      </div>
     </div>
   </nav>
 
   <!--
-    ========== SPA 挂载点 ==========
-    所有页面内容（首页列表、文章详情、编辑器）均动态渲染到此 div
-    路由变化时替换 innerHTML，实现无刷新页面切换（动态页面技术）
+    SPA 挂载点：所有页面内容动态渲染到此 div
+    路由变化时替换 innerHTML，实现无刷新页面切换
   -->
   <main id="app" class="app-container"></main>
 
@@ -31,13 +77,6 @@
     <p>&copy; 2026 王邻皓 · WLH Blog · 数据存储于浏览器 localStorage</p>
   </footer>
 
-  <!--
-    脚本加载顺序（顺序不可打乱，后者依赖前者）：
-      store.js  — 数据库层（localStorage CRUD）
-      router.js — SPA 路由（hash 监听）
-      md.js     — Markdown 渲染器
-      app.js    — 页面渲染逻辑 & 事件绑定 & 初始化
-  -->
   <script src="js/store.js"></script>
   <script src="js/router.js"></script>
   <script src="js/md.js"></script>

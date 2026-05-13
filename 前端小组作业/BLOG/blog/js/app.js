@@ -1,35 +1,42 @@
 /* ============================================================
-   app.js — 视图渲染层 & 应用入口
-   职责：
-     · 定义路由表，将 URL 映射到渲染函数
-     · 每个渲染函数生成 HTML 字符串并挂载到 #app
-     · 挂载后绑定事件监听器（事件委托 + 直接绑定）
-     · 管理 UI 状态（搜索词、当前标签过滤、编辑器预览切换）
+   app.js — 视图渲染层 & 应用入口 (v2)
+   新增：深色模式、时间线视图、专栏系统、置顶、封面图
    ============================================================ */
 
-/* ── 1. 工具函数 ── */
+/* ── 1. 专栏定义 ── */
 
-/** 将时间戳格式化为 "YYYY-MM-DD" */
+const COLUMNS = [
+  { id: "life",     name: "生活随笔", icon: "🌱", color: "#059669" },
+  { id: "study",    name: "学习笔记", icon: "📚", color: "#2563eb" },
+  { id: "review",   name: "阶段总结", icon: "🎯", color: "#d97706" },
+  { id: "research", name: "科研进展", icon: "🔬", color: "#7c3aed" }
+];
+
+/* ── 2. 视图模式状态 ── */
+
+let _viewMode = localStorage.getItem("wlh_view_mode") || "cards"; // "cards" | "timeline"
+
+/* ── 3. 工具函数 ── */
+
 function fmtDate(ts) {
   const d = new Date(ts);
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
 }
 
-/** 估算阅读时间（中文按 300字/分钟，英文按 200词/分钟） */
-function readTime(wordCount) {
-  const min = Math.max(1, Math.round(wordCount / 250));
-  return `约 ${min} 分钟阅读`;
+function fmtMonth(ts) {
+  const d = new Date(ts);
+  return `${d.getFullYear()} 年 ${d.getMonth()+1} 月`;
 }
 
-/**
- * 根据标签名映射一个固定颜色（哈希取余）
- * 返回 [背景色, 文字色]
- */
+function readTime(wordCount) {
+  return `约 ${Math.max(1, Math.round(wordCount / 250))} 分钟阅读`;
+}
+
 const TAG_PALETTE = [
-  ["#dbeafe", "#1d4ed8"], ["#dcfce7", "#15803d"],
-  ["#fef3c7", "#b45309"], ["#fce7f3", "#be185d"],
-  ["#ede9fe", "#6d28d9"], ["#e0f2fe", "#0369a1"],
-  ["#fff7ed", "#c2410c"], ["#f0fdf4", "#166534"]
+  ["#dbeafe","#1d4ed8"],["#dcfce7","#15803d"],
+  ["#fef3c7","#b45309"],["#fce7f3","#be185d"],
+  ["#ede9fe","#6d28d9"],["#e0f2fe","#0369a1"],
+  ["#fff7ed","#c2410c"],["#f0fdf4","#166534"]
 ];
 function tagColor(tag) {
   let h = 0;
@@ -37,17 +44,18 @@ function tagColor(tag) {
   return TAG_PALETTE[Math.abs(h) % TAG_PALETTE.length];
 }
 
-/**
- * 根据文章第一个标签生成卡片顶部色条的渐变色
- * 无标签时使用 accent 蓝
- */
 function cardAccent(post) {
-  if (!post.tags.length) return "linear-gradient(90deg, #2563eb, #60a5fa)";
+  if (!post.tags.length) return "linear-gradient(90deg,#2563eb,#60a5fa)";
   const [bg, fg] = tagColor(post.tags[0]);
-  return `linear-gradient(90deg, ${fg}, ${bg})`;
+  return `linear-gradient(90deg,${fg},${bg})`;
 }
 
-/** 将文章列表渲染为卡片 HTML 字符串 */
+function getColumn(id) {
+  return COLUMNS.find(c => c.id === id) || null;
+}
+
+/* ── 4. 渲染：文章卡片列表 ── */
+
 function renderCards(posts) {
   if (!posts.length) {
     return `<div class="empty-state">
@@ -56,11 +64,16 @@ function renderCards(posts) {
       <a href="#/new" class="btn btn-primary">写第一篇</a>
     </div>`;
   }
-  return posts.map((p, i) => `
-    <article class="post-card fade-card" style="animation-delay:${i * 0.07}s">
+  return posts.map((p, i) => {
+    const col = getColumn(p.column);
+    return `
+    <article class="post-card fade-card" style="animation-delay:${i*0.07}s">
+      ${p.cover ? `<div class="card-cover"><img src="${escapeHtml(p.cover)}" alt="封面" loading="lazy" onerror="this.parentElement.style.display='none'"></div>` : ""}
       <div class="card-accent-bar" style="background:${cardAccent(p)}"></div>
       <div class="card-body">
         <div class="card-meta">
+          ${p.pinned ? `<span class="pin-badge">📌 置顶</span>` : ""}
+          ${col ? `<span class="col-badge" style="color:${col.color};background:${col.color}18;border-color:${col.color}30">${col.icon} ${col.name}</span>` : ""}
           <span class="card-date">${fmtDate(p.createdAt)}</span>
           <span class="card-dot">·</span>
           <span class="card-readtime">${readTime(p.wordCount || 0)}</span>
@@ -80,11 +93,52 @@ function renderCards(posts) {
           <a href="#/post/${p.id}" class="read-more">阅读全文 <span class="arrow">→</span></a>
         </div>
       </div>
-    </article>
-  `).join("");
+    </article>`;
+  }).join("");
 }
 
-/** 渲染标签过滤栏 HTML */
+/* ── 5. 渲染：时间线视图 ── */
+
+function renderTimeline(posts) {
+  if (!posts.length) {
+    return `<div class="empty-state">
+      <div class="empty-icon">📭</div><p>暂无文章</p>
+      <a href="#/new" class="btn btn-primary">写第一篇</a>
+    </div>`;
+  }
+
+  // 按年-月分组
+  const groups = {};
+  posts.forEach(p => {
+    const key = fmtMonth(p.createdAt);
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(p);
+  });
+
+  return `<div class="timeline-wrap fade-in">
+    ${Object.entries(groups).map(([month, mPosts]) => `
+      <div class="timeline-month">
+        <div class="timeline-month-label">${month}</div>
+        <div class="timeline-month-items">
+          ${mPosts.map(p => {
+            const col = getColumn(p.column);
+            return `<div class="timeline-item">
+              <a href="#/post/${p.id}" class="timeline-card">
+                <span class="timeline-date">${fmtDate(p.createdAt)}</span>
+                <span class="timeline-title">${escapeHtml(p.title)}</span>
+                ${col ? `<span class="timeline-col-badge">${col.icon} ${col.name}</span>` : ""}
+                ${p.pinned ? `<span class="timeline-pin">📌</span>` : ""}
+              </a>
+            </div>`;
+          }).join("")}
+        </div>
+      </div>
+    `).join("")}
+  </div>`;
+}
+
+/* ── 6. 渲染：标签过滤栏 ── */
+
 function renderTagFilter(allTags, activeTag = "") {
   const entries = Object.entries(allTags);
   if (!entries.length) return "";
@@ -98,30 +152,54 @@ function renderTagFilter(allTags, activeTag = "") {
             </a>`;
   }).join("");
   return `<div class="tag-filter">
-    <a href="#/" class="tag-pill ${activeTag ? "" : "tag-active"}" style="">全部</a>
+    <a href="#/" class="tag-pill ${activeTag?"":"tag-active"}" style="">全部</a>
     ${pills}
   </div>`;
 }
 
-/* ── 2. 页面渲染函数 ── */
+/* ── 7. 渲染：专栏卡片行 ── */
 
-/** 首页 — 文章列表 + 搜索 + 标签筛选 + 统计 */
-function renderHome({ tag = "", query = "" } = {}) {
+function renderColumnsRow() {
+  return `<div class="columns-row fade-in">
+    ${COLUMNS.map(col => {
+      const count = getPostsByColumn(col.id).length;
+      return `<a href="#/column/${col.id}" class="column-card">
+        <span class="column-icon">${col.icon}</span>
+        <span class="column-name">${col.name}</span>
+        <span class="column-count">${count} 篇</span>
+      </a>`;
+    }).join("")}
+  </div>`;
+}
+
+/* ── 8. 页面：首页 ── */
+
+function renderHome({ tag = "", query = "", column = "" } = {}) {
   setNavActive("nav-home");
 
-  const stats = getStats();
+  const stats   = getStats();
   const allTags = getAllTags();
-  const posts = tag   ? getPostsByTag(decodeURIComponent(tag))
-              : query ? searchPosts(query)
-              : getAllPosts();
 
-  const heading = tag   ? `标签：${decodeURIComponent(tag)}`
-                : query ? `搜索：${query}`
+  let posts;
+  if (tag)    posts = getPostsByTag(decodeURIComponent(tag));
+  else if (query)  posts = searchPosts(query);
+  else if (column) posts = getPostsByColumn(column);
+  else             posts = getAllPosts();
+
+  const col     = getColumn(column);
+  const heading = tag    ? `标签：${decodeURIComponent(tag)}`
+                : query  ? `搜索：${query}`
+                : col    ? `${col.icon} ${col.name}`
                 : "所有文章";
 
+  const listHtml = _viewMode === "timeline"
+    ? renderTimeline(posts)
+    : `<div class="post-list" id="post-list">${renderCards(posts)}</div>`;
+
   mount(`
-    <!-- 顶部 Banner -->
-    <div class="home-banner fade-in">
+    ${!tag && !query && !column ? renderColumnsRow() : ""}
+
+    <div class="home-banner fade-in" style="animation-delay:.05s">
       <h1 class="banner-title">WLH Blog</h1>
       <p class="banner-sub">记录科研、思考与成长</p>
       <div class="stats-row">
@@ -133,7 +211,6 @@ function renderHome({ tag = "", query = "" } = {}) {
       </div>
     </div>
 
-    <!-- 搜索框 -->
     <div class="search-wrap fade-in" style="animation-delay:.1s">
       <input id="search-input" class="search-input" type="text"
              placeholder="搜索文章标题、内容或标签…"
@@ -141,24 +218,18 @@ function renderHome({ tag = "", query = "" } = {}) {
       <span class="search-icon">🔍</span>
     </div>
 
-    <!-- 标签过滤 -->
-    <div class="fade-in" style="animation-delay:.15s">
+    <div class="fade-in" style="animation-delay:.14s">
       ${renderTagFilter(allTags, decodeURIComponent(tag))}
     </div>
 
-    <!-- 文章列表标题 -->
-    <div class="list-heading fade-in" style="animation-delay:.2s">
+    <div class="list-heading fade-in" style="animation-delay:.18s">
       <h2 class="list-title">${escapeHtml(heading)}</h2>
       <span class="list-count">${posts.length} 篇</span>
     </div>
 
-    <!-- 文章卡片 -->
-    <div class="post-list" id="post-list">
-      ${renderCards(posts)}
-    </div>
+    ${listHtml}
   `);
 
-  /* 搜索框实时过滤 — debounce 300ms */
   let timer;
   document.getElementById("search-input").addEventListener("input", e => {
     clearTimeout(timer);
@@ -169,20 +240,21 @@ function renderHome({ tag = "", query = "" } = {}) {
   });
 }
 
-/** 文章详情页 */
+/* ── 9. 页面：文章详情 ── */
+
 function renderPost({ id }) {
   setNavActive("nav-home");
   const post = getPost(id);
 
   if (!post) {
     mount(`<div class="not-found">
-      <h2>文章不存在</h2>
-      <p>该文章可能已被删除。</p>
+      <h2>文章不存在</h2><p>该文章可能已被删除。</p>
       <a href="#/" class="btn btn-secondary">← 返回首页</a>
     </div>`);
     return;
   }
 
+  const col = getColumn(post.column);
   const tagsHtml = post.tags.map(t => {
     const [bg, fg] = tagColor(t);
     return `<a href="#/tag/${encodeURIComponent(t)}" class="tag-pill"
@@ -191,18 +263,22 @@ function renderPost({ id }) {
 
   mount(`
     <div class="post-detail fade-in">
-      <!-- 返回 + 操作按钮 -->
       <div class="post-actions-top">
         <a href="#/" class="btn btn-ghost">← 返回</a>
         <div class="post-ops">
+          <button class="btn btn-pin ${post.pinned?"pinned":""}" id="btn-pin">
+            ${post.pinned ? "📌 取消置顶" : "📌 置顶"}
+          </button>
           <a href="#/edit/${post.id}" class="btn btn-secondary">编辑</a>
           <button class="btn btn-danger" id="btn-delete">删除</button>
         </div>
       </div>
 
-      <!-- 文章头部 -->
+      ${post.cover ? `<div class="post-cover"><img src="${escapeHtml(post.cover)}" alt="封面" onerror="this.parentElement.style.display='none'"></div>` : ""}
+
       <header class="post-header">
         <div class="post-meta-row">
+          ${col ? `<span class="post-col-label">${col.icon} ${col.name}</span>` : ""}
           <span>${fmtDate(post.createdAt)}</span>
           <span class="card-dot">·</span>
           <span>${readTime(post.wordCount || 0)}</span>
@@ -214,12 +290,8 @@ function renderPost({ id }) {
         <div class="tag-row">${tagsHtml}</div>
       </header>
 
-      <!-- 正文（Markdown 渲染） -->
-      <div class="post-content markdown-body">
-        ${renderMarkdown(post.content)}
-      </div>
+      <div class="post-content markdown-body">${renderMarkdown(post.content)}</div>
 
-      <!-- 底部操作 -->
       <div class="post-actions-bottom">
         <a href="#/" class="btn btn-ghost">← 所有文章</a>
         <div class="post-ops">
@@ -230,50 +302,197 @@ function renderPost({ id }) {
     </div>
   `);
 
-  /* 删除按钮：二次确认后执行删除并跳转首页 */
+  // 置顶切换
+  document.getElementById("btn-pin").addEventListener("click", () => {
+    togglePin(id);
+    navigate(`/post/${id}`); // 重新渲染详情页
+  });
+
+  // 删除
   const doDelete = () => {
     if (confirm(`确认删除《${post.title}》？此操作不可撤销。`)) {
-      deletePost(id);
-      navigate("/");
+      deletePost(id); navigate("/");
     }
   };
   document.getElementById("btn-delete")?.addEventListener("click", doDelete);
   document.getElementById("btn-delete-bottom")?.addEventListener("click", doDelete);
 }
 
-/** 团队成员页 — 展示小组3位成员卡片，链接各自个人主页 */
+/* ── 10. 页面：编辑器（新建 & 编辑复用） ── */
+
+function renderEditor({ id } = {}) {
+  setNavActive("nav-new");
+  const post   = id ? getPost(id) : null;
+  const isEdit = !!post;
+
+  const title   = isEdit ? post.title          : "";
+  const tags    = isEdit ? post.tags.join(", ") : "";
+  const content = isEdit ? post.content        : "";
+  const cover   = isEdit ? (post.cover || "")  : "";
+  const column  = isEdit ? (post.column || "") : "";
+
+  const columnOptions = COLUMNS.map(c =>
+    `<option value="${c.id}" ${column===c.id?"selected":""}>${c.icon} ${c.name}</option>`
+  ).join("");
+
+  mount(`
+    <div class="editor-wrap fade-in">
+      <div class="editor-header">
+        <h2 class="editor-heading">${isEdit?"编辑文章":"写文章"}</h2>
+        <div class="editor-tabs">
+          <button class="tab-btn tab-active" id="tab-write">编辑</button>
+          <button class="tab-btn" id="tab-preview">预览</button>
+        </div>
+      </div>
+
+      <input id="e-title" class="editor-title-input"
+             type="text" placeholder="文章标题…" value="${escapeHtml(title)}" />
+
+      <!-- 元数据行：专栏 + 封面图 -->
+      <div class="editor-meta-row">
+        <div class="editor-field">
+          <label class="editor-field-label">所属专栏</label>
+          <select id="e-column" class="editor-field-select">
+            <option value="">不归属专栏</option>
+            ${columnOptions}
+          </select>
+        </div>
+        <div class="editor-field">
+          <label class="editor-field-label">封面图 URL（可选）</label>
+          <input id="e-cover" class="editor-field-input" type="url"
+                 placeholder="https://images.unsplash.com/…"
+                 value="${escapeHtml(cover)}" />
+        </div>
+      </div>
+
+      <div class="editor-tags-wrap">
+        <span class="editor-tags-label">标签</span>
+        <input id="e-tags" class="editor-tags-input"
+               type="text" placeholder="用逗号分隔，如：RLHF, 研究笔记"
+               value="${escapeHtml(tags)}" />
+      </div>
+      <div class="tag-row tag-preview-row" id="tag-preview"></div>
+
+      <div class="editor-pane" id="pane-write">
+        <textarea id="e-content" class="editor-textarea"
+                  placeholder="开始写作…（支持 Markdown 语法）"
+        >${escapeHtml(content)}</textarea>
+        <div class="editor-hint">支持 Markdown · # 标题 · **粗体** · \`代码\` · > 引用 · - 列表</div>
+      </div>
+      <div class="editor-pane hidden" id="pane-preview">
+        <div class="preview-body markdown-body" id="preview-body"></div>
+      </div>
+
+      <div class="editor-footer">
+        <a href="${isEdit?`#/post/${id}`:"#/"}" class="btn btn-ghost">取消</a>
+        <div class="editor-footer-right">
+          <span class="word-counter" id="word-counter">0 字</span>
+          <button class="btn btn-primary" id="btn-save">
+            ${isEdit?"保存修改":"发布文章"}
+          </button>
+        </div>
+      </div>
+      <div class="save-hint" id="save-hint"></div>
+    </div>
+  `);
+
+  // 标签实时预览
+  const tagsInput  = document.getElementById("e-tags");
+  const tagPreview = document.getElementById("tag-preview");
+  function refreshTagPreview() {
+    const ts = tagsInput.value.split(",").map(t=>t.trim()).filter(Boolean);
+    tagPreview.innerHTML = ts.map(t => {
+      const [bg, fg] = tagColor(t);
+      return `<span class="tag-pill" style="background:${bg};color:${fg};border-color:${fg}33">${escapeHtml(t)}</span>`;
+    }).join("");
+  }
+  tagsInput.addEventListener("input", refreshTagPreview);
+  refreshTagPreview();
+
+  // 字数统计
+  const contentArea = document.getElementById("e-content");
+  const wordCounter = document.getElementById("word-counter");
+  function refreshCount() {
+    const cjk = (contentArea.value.match(/[一-鿿]/g)||[]).length;
+    const eng  = (contentArea.value.match(/\b[a-zA-Z]+\b/g)||[]).length;
+    wordCounter.textContent = `${cjk+eng} 字`;
+  }
+  contentArea.addEventListener("input", refreshCount);
+  refreshCount();
+
+  // 编辑/预览切换
+  const paneWrite   = document.getElementById("pane-write");
+  const panePreview = document.getElementById("pane-preview");
+  const tabWrite    = document.getElementById("tab-write");
+  const tabPreview  = document.getElementById("tab-preview");
+  const previewBody = document.getElementById("preview-body");
+  tabWrite.addEventListener("click", () => {
+    paneWrite.classList.remove("hidden"); panePreview.classList.add("hidden");
+    tabWrite.classList.add("tab-active"); tabPreview.classList.remove("tab-active");
+  });
+  tabPreview.addEventListener("click", () => {
+    paneWrite.classList.add("hidden"); panePreview.classList.remove("hidden");
+    tabWrite.classList.remove("tab-active"); tabPreview.classList.add("tab-active");
+    previewBody.innerHTML = contentArea.value.trim()
+      ? renderMarkdown(contentArea.value)
+      : `<p class="preview-empty">暂无内容</p>`;
+  });
+
+  // 保存
+  document.getElementById("btn-save").addEventListener("click", () => {
+    const title   = document.getElementById("e-title").value.trim();
+    const tags    = tagsInput.value.split(",").map(t=>t.trim()).filter(Boolean);
+    const content = contentArea.value.trim();
+    const cover   = document.getElementById("e-cover").value.trim();
+    const column  = document.getElementById("e-column").value;
+    const hint    = document.getElementById("save-hint");
+
+    if (!title)   { showHint(hint, "请填写文章标题", "error"); return; }
+    if (!content) { showHint(hint, "请填写文章内容", "error"); return; }
+
+    if (isEdit) {
+      updatePost(id, { title, content, tags, cover, column });
+      showHint(hint, "已保存！正在跳转…", "ok");
+      setTimeout(() => navigate(`/post/${id}`), 800);
+    } else {
+      const p = createPost({ title, content, tags, cover, column });
+      showHint(hint, "发布成功！正在跳转…", "ok");
+      setTimeout(() => navigate(`/post/${p.id}`), 800);
+    }
+  });
+}
+
+/* ── 11. 页面：团队成员 ── */
+
 function renderTeam() {
   setNavActive("nav-team");
 
   const members = [
     {
-      name: "王邻皓",
-      abbr: "WLH",
+      name: "王邻皓", abbr: "WLH",
       role: "博客作者 · 全栈开发",
       desc: "热爱科研与技术写作，本 Blog 的创建者与维护者。",
-      url: "../../Personal_Page_WLH/index.html",
-      color: ["#dbeafe", "#1d4ed8"]
+      url:  "../../Personal_Page_WLH/index.html",
+      color: ["#dbeafe","#1d4ed8"]
     },
     {
-      name: "李鹿鸣",
-      abbr: "LLM",
+      name: "李鹿鸣", abbr: "LLM",
       role: "前端开发",
       desc: "热爱前端开发的大学生，擅长音乐、摄影与运动。",
-      url: "../../Personal_Page_LLM/index.html",
-      color: ["#dcfce7", "#15803d"]
+      url:  "../../Personal_Page_LLM/index.html",
+      color: ["#dcfce7","#15803d"]
     },
     {
-      name: "张博瑞",
-      abbr: "ZBR",
+      name: "张博瑞", abbr: "ZBR",
       role: "前端开发",
       desc: "专注前端技术探索与实践的小组成员。",
-      url: "../../Personal_Page_ZBR/index.html",
-      color: ["#ede9fe", "#6d28d9"]
+      url:  "../../Personal_Page_ZBR/index.html",
+      color: ["#ede9fe","#6d28d9"]
     }
   ];
 
   const cards = members.map((m, i) => `
-    <div class="team-card fade-card" style="animation-delay:${i * 0.1}s">
+    <div class="team-card fade-card" style="animation-delay:${i*0.1}s">
       <div class="team-card-top" style="background:linear-gradient(135deg,${m.color[1]},${m.color[0]})">
         <div class="team-avatar">${m.abbr}</div>
       </div>
@@ -294,191 +513,111 @@ function renderTeam() {
         <h1 class="team-page-title">团队成员</h1>
         <p class="team-page-sub">小组共 3 位成员，点击卡片访问各自的个人主页</p>
       </div>
-      <div class="team-grid">
-        ${cards}
-      </div>
+      <div class="team-grid">${cards}</div>
     </div>
   `);
 }
 
-/** 编辑器页（新建 & 编辑复用同一个组件） */
-function renderEditor({ id } = {}) {
-  setNavActive("nav-new");
-  const post = id ? getPost(id) : null;
-  const isEdit = !!post;
+/* ── 12. 辅助函数 ── */
 
-  const title   = isEdit ? post.title   : "";
-  const tags    = isEdit ? post.tags.join(", ") : "";
-  const content = isEdit ? post.content : "";
-
-  mount(`
-    <div class="editor-wrap fade-in">
-      <div class="editor-header">
-        <h2 class="editor-heading">${isEdit ? "编辑文章" : "写文章"}</h2>
-        <div class="editor-tabs">
-          <button class="tab-btn tab-active" id="tab-write">编辑</button>
-          <button class="tab-btn" id="tab-preview">预览</button>
-        </div>
-      </div>
-
-      <input id="e-title" class="editor-title-input"
-             type="text" placeholder="文章标题…" value="${escapeHtml(title)}" />
-
-      <div class="editor-tags-wrap">
-        <span class="editor-tags-label">标签</span>
-        <input id="e-tags" class="editor-tags-input"
-               type="text" placeholder="用逗号分隔，如：RLHF, 研究笔记"
-               value="${escapeHtml(tags)}" />
-      </div>
-      <!-- 标签预览行（实时渲染） -->
-      <div class="tag-row tag-preview-row" id="tag-preview"></div>
-
-      <!-- 编辑区 / 预览区（切换显示） -->
-      <div class="editor-pane" id="pane-write">
-        <textarea id="e-content" class="editor-textarea"
-                  placeholder="开始写作…（支持 Markdown 语法）"
-        >${escapeHtml(content)}</textarea>
-        <div class="editor-hint">支持 Markdown · # 标题 · **粗体** · \`代码\` · > 引用 · - 列表</div>
-      </div>
-      <div class="editor-pane hidden" id="pane-preview">
-        <div class="preview-body markdown-body" id="preview-body"></div>
-      </div>
-
-      <!-- 底部操作栏 -->
-      <div class="editor-footer">
-        <a href="${isEdit ? `#/post/${id}` : "#/"}" class="btn btn-ghost">取消</a>
-        <div class="editor-footer-right">
-          <span class="word-counter" id="word-counter">0 字</span>
-          <button class="btn btn-primary" id="btn-save">
-            ${isEdit ? "保存修改" : "发布文章"}
-          </button>
-        </div>
-      </div>
-
-      <div class="save-hint" id="save-hint"></div>
-    </div>
-  `);
-
-  /* ── 标签实时预览 ── */
-  const tagsInput   = document.getElementById("e-tags");
-  const tagPreview  = document.getElementById("tag-preview");
-  function refreshTagPreview() {
-    const ts = tagsInput.value.split(",").map(t => t.trim()).filter(Boolean);
-    tagPreview.innerHTML = ts.map(t => {
-      const [bg, fg] = tagColor(t);
-      return `<span class="tag-pill" style="background:${bg};color:${fg};border-color:${fg}33">${escapeHtml(t)}</span>`;
-    }).join("");
-  }
-  tagsInput.addEventListener("input", refreshTagPreview);
-  refreshTagPreview();
-
-  /* ── 字数统计实时更新 ── */
-  const contentArea = document.getElementById("e-content");
-  const wordCounter = document.getElementById("word-counter");
-  function refreshCount() {
-    const cjk = (contentArea.value.match(/[一-鿿]/g) || []).length;
-    const eng  = (contentArea.value.match(/\b[a-zA-Z]+\b/g) || []).length;
-    wordCounter.textContent = `${cjk + eng} 字`;
-  }
-  contentArea.addEventListener("input", refreshCount);
-  refreshCount();
-
-  /* ── 编辑/预览 Tab 切换 ── */
-  const paneWrite   = document.getElementById("pane-write");
-  const panePreview = document.getElementById("pane-preview");
-  const tabWrite    = document.getElementById("tab-write");
-  const tabPreview  = document.getElementById("tab-preview");
-  const previewBody = document.getElementById("preview-body");
-
-  tabWrite.addEventListener("click", () => {
-    paneWrite.classList.remove("hidden");
-    panePreview.classList.add("hidden");
-    tabWrite.classList.add("tab-active");
-    tabPreview.classList.remove("tab-active");
-  });
-  tabPreview.addEventListener("click", () => {
-    paneWrite.classList.add("hidden");
-    panePreview.classList.remove("hidden");
-    tabWrite.classList.remove("tab-active");
-    tabPreview.classList.add("tab-active");
-    // 渲染当前内容的 Markdown 预览
-    previewBody.innerHTML = contentArea.value.trim()
-      ? renderMarkdown(contentArea.value)
-      : `<p class="preview-empty">暂无内容</p>`;
-  });
-
-  /* ── 保存 ── */
-  document.getElementById("btn-save").addEventListener("click", () => {
-    const title   = document.getElementById("e-title").value.trim();
-    const tags    = document.getElementById("e-tags").value
-                      .split(",").map(t => t.trim()).filter(Boolean);
-    const content = contentArea.value.trim();
-    const hint    = document.getElementById("save-hint");
-
-    if (!title)   { showHint(hint, "请填写文章标题", "error"); return; }
-    if (!content) { showHint(hint, "请填写文章内容", "error"); return; }
-
-    if (isEdit) {
-      updatePost(id, { title, content, tags });
-      showHint(hint, "已保存！正在跳转…", "ok");
-      setTimeout(() => navigate(`/post/${id}`), 800);
-    } else {
-      const p = createPost({ title, content, tags });
-      showHint(hint, "发布成功！正在跳转…", "ok");
-      setTimeout(() => navigate(`/post/${p.id}`), 800);
-    }
-  });
-}
-
-/* ── 3. 辅助函数 ── */
-
-/** 将 HTML 字符串挂载到 #app，并触发重绘（让 animation 重新执行） */
 function mount(html) {
-  const app = document.getElementById("app");
-  app.innerHTML = html;
-  // 滚动回顶部
+  document.getElementById("app").innerHTML = html;
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
-/** 更新导航栏高亮 */
 function setNavActive(id) {
   document.querySelectorAll(".nav-link").forEach(el =>
     el.classList.toggle("active", el.id === id)
   );
 }
 
-/** 显示操作提示（成功/错误） */
 function showHint(el, msg, type) {
   el.textContent = msg;
   el.className = `save-hint save-hint-${type}`;
-  if (type === "ok") setTimeout(() => { el.textContent = ""; el.className = "save-hint"; }, 3000);
+  if (type === "ok") setTimeout(() => { el.textContent=""; el.className="save-hint"; }, 3000);
 }
 
-/* ── 4. 初始化 ── */
+/* ── 13. 深色模式 ── */
+
+function applyDark(isDark) {
+  document.body.classList.toggle("dark", isDark);
+  document.getElementById("icon-moon")?.classList.toggle("hidden", isDark);
+  document.getElementById("icon-sun")?.classList.toggle("hidden", !isDark);
+}
+
+function initDarkMode() {
+  const saved = localStorage.getItem("wlh_dark_mode");
+  applyDark(saved === "dark");
+
+  document.getElementById("btn-dark-toggle").addEventListener("click", () => {
+    const isDark = document.body.classList.toggle("dark");
+    localStorage.setItem("wlh_dark_mode", isDark ? "dark" : "light");
+    document.getElementById("icon-moon").classList.toggle("hidden", isDark);
+    document.getElementById("icon-sun").classList.toggle("hidden", !isDark);
+  });
+}
+
+/* ── 14. 视图切换（卡片 / 时间线） ── */
+
+function updateViewIcon() {
+  document.getElementById("icon-cards")?.classList.toggle("hidden", _viewMode !== "cards");
+  document.getElementById("icon-timeline")?.classList.toggle("hidden", _viewMode !== "timeline");
+}
+
+function initViewToggle() {
+  updateViewIcon();
+  document.getElementById("btn-view-toggle").addEventListener("click", () => {
+    _viewMode = _viewMode === "cards" ? "timeline" : "cards";
+    localStorage.setItem("wlh_view_mode", _viewMode);
+    updateViewIcon();
+    // 当前在首页类路由时刷新视图
+    const path = currentPath();
+    if (path === "/" || path.startsWith("/tag/") ||
+        path.startsWith("/search/") || path.startsWith("/column/")) {
+      refresh();
+    }
+  });
+}
+
+/* ── 15. 初始化 ── */
 
 document.addEventListener("DOMContentLoaded", () => {
   // 导航栏出场动画
   setTimeout(() => document.getElementById("navbar").classList.add("nav-visible"), 100);
 
-  // 监听滚动：导航栏阴影
+  // 导航栏滚动阴影
   window.addEventListener("scroll", () => {
     document.getElementById("navbar").classList.toggle("scrolled", window.scrollY > 10);
   }, { passive: true });
+
+  // 滚动进度条
+  const bar = document.createElement("div");
+  bar.id = "progress-bar";
+  document.body.prepend(bar);
+  window.addEventListener("scroll", () => {
+    const total = document.body.scrollHeight - window.innerHeight;
+    bar.style.width = total > 0 ? `${(window.scrollY/total)*100}%` : "0%";
+  }, { passive: true });
+
+  // 功能初始化
+  initDarkMode();
+  initViewToggle();
 
   // 写入种子数据（仅首次）
   seedIfEmpty();
 
   // 注册路由表
   defineRoutes({
-    "/":              ()      => renderHome(),
-    "/tag/:tag":      p       => renderHome({ tag: p.tag }),
-    "/search/:query": p       => renderHome({ query: decodeURIComponent(p.query) }),
-    "/post/:id":      p       => renderPost({ id: p.id }),
-    "/team":          ()      => renderTeam(),
-    "/new":           ()      => renderEditor(),
-    "/edit/:id":      p       => renderEditor({ id: p.id })
+    "/":               ()  => renderHome(),
+    "/tag/:tag":       p   => renderHome({ tag: p.tag }),
+    "/search/:query":  p   => renderHome({ query: decodeURIComponent(p.query) }),
+    "/column/:col":    p   => renderHome({ column: p.col }),
+    "/post/:id":       p   => renderPost({ id: p.id }),
+    "/team":           ()  => renderTeam(),
+    "/new":            ()  => renderEditor(),
+    "/edit/:id":       p   => renderEditor({ id: p.id })
   });
 
-  // 启动路由（处理初始 URL，此后由 hashchange 驱动）
+  // 启动路由
   startRouter();
 });
