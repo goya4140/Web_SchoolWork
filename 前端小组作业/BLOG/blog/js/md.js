@@ -38,6 +38,14 @@ function renderMarkdown(src) {
     return `\x02INLINE${inlineCodes.length - 1}\x03`;
   });
 
+  /* ── Step 1.5：提取图片 ![alt](url)，保护 URL 不被 escapeHtml 破坏 ── */
+  const imgBlocks = [];
+  src = src.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_, alt, url) => {
+    const safeAlt = alt.replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    imgBlocks.push(`<img src="${url}" alt="${safeAlt}" class="md-img" loading="lazy" onerror="this.style.display='none'">`);
+    return `\x02IMG${imgBlocks.length - 1}\x03`;
+  });
+
   /* ── Step 2：对剩余文本做 HTML 转义（XSS 安全） ── */
   src = escapeHtml(src);
 
@@ -97,6 +105,7 @@ function renderMarkdown(src) {
   /* ── Step 5：还原被保护的代码块 ── */
   src = src.replace(/\x02FENCE(\d+)\x03/g, (_, i) => fenceBlocks[i]);
   src = src.replace(/\x02INLINE(\d+)\x03/g, (_, i) => inlineCodes[i]);
+  src = src.replace(/\x02IMG(\d+)\x03/g,    (_, i) => imgBlocks[i]);
 
   return src;
 }

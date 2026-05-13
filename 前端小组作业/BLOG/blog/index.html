@@ -73,6 +73,19 @@
   -->
   <main id="app" class="app-container"></main>
 
+  <!-- ========== 批量导出工具栏（固定底部，导出模式时显示） ========== -->
+  <div id="export-bar" class="export-bar hidden">
+    <div class="export-bar-inner">
+      <span id="export-bar-count" class="export-bar-count">已选 0 篇</span>
+      <div class="export-bar-actions">
+        <button class="btn btn-ghost btn-sm" id="btn-export-all">全选本页</button>
+        <button class="btn btn-ghost btn-sm" id="btn-export-none">取消全选</button>
+        <button class="btn btn-primary btn-sm" id="btn-export-do" disabled>⬇ 导出 .md</button>
+        <button class="btn btn-ghost btn-sm" id="btn-export-exit">✕ 退出</button>
+      </div>
+    </div>
+  </div>
+
   <footer class="footer">
     <p>&copy; 2026 王邻皓 · WLH Blog · 数据存储于浏览器 localStorage</p>
   </footer>

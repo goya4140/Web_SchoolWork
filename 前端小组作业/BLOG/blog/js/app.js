@@ -12,9 +12,13 @@ const COLUMNS = [
   { id: "research", name: "科研进展", icon: "🔬", color: "#7c3aed" }
 ];
 
-/* ── 2. 视图模式状态 ── */
+/* ── 2. 视图模式 & 导出状态 ── */
 
 let _viewMode = localStorage.getItem("wlh_view_mode") || "cards"; // "cards" | "timeline"
+
+let _exportMode = false;           // 批量导出模式开关
+const _selectedPosts = new Set();  // 已勾选文章 id
+let _exportPosts = [];             // 当前页面可勾选的文章列表
 
 /* ── 3. 工具函数 ── */
 
@@ -54,9 +58,73 @@ function getColumn(id) {
   return COLUMNS.find(c => c.id === id) || null;
 }
 
-/* ── 4. 渲染：文章卡片列表 ── */
+/* ── 4. 导出功能 ── */
 
-function renderCards(posts) {
+/** 将单篇文章转换为 Markdown 文本（含元数据头） */
+function buildMdContent(post) {
+  const col = getColumn(post.column);
+  const metaLines = [
+    `**日期**：${fmtDate(post.createdAt)}`,
+    `**标签**：${post.tags.length ? post.tags.join("、") : "无"}`,
+    col ? `**专栏**：${col.icon} ${col.name}` : null,
+  ].filter(Boolean).join("  \n");
+  return `# ${post.title}\n\n${metaLines}\n\n---\n\n${post.content}`;
+}
+
+/** 触发浏览器下载一个 .md 文件 */
+function downloadMd(filename, content) {
+  const blob = new Blob(["﻿" + content], { type: "text/markdown;charset=utf-8" });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/** 导出已选文章（单篇独立文件 / 多篇合并为一个文件） */
+function exportSelectedPosts() {
+  const posts = [..._selectedPosts].map(id => getPost(id)).filter(Boolean);
+  if (!posts.length) { alert("请先勾选要导出的文章"); return; }
+  if (posts.length === 1) {
+    downloadMd(`${posts[0].title}.md`, buildMdContent(posts[0]));
+  } else {
+    const body = posts.map(p => buildMdContent(p)).join("\n\n---\n\n");
+    downloadMd(`博客导出_${fmtDate(Date.now())}.md`, body);
+  }
+}
+
+/** 进入批量导出模式 */
+function enterExportMode(posts) {
+  _exportMode = true;
+  _selectedPosts.clear();
+  _exportPosts = posts;
+  document.getElementById("export-bar")?.classList.remove("hidden");
+  updateExportBar();
+}
+
+/** 退出批量导出模式（隐藏工具栏、清空已选） */
+function exitExportMode() {
+  _exportMode = false;
+  _selectedPosts.clear();
+  _exportPosts = [];
+  document.getElementById("export-bar")?.classList.add("hidden");
+}
+
+/** 刷新工具栏上的已选计数与按钮状态 */
+function updateExportBar() {
+  const n = _selectedPosts.size;
+  const countEl = document.getElementById("export-bar-count");
+  if (countEl) countEl.textContent = `已选 ${n} 篇`;
+  const doBtn = document.getElementById("btn-export-do");
+  if (doBtn) doBtn.disabled = n === 0;
+}
+
+/* ── 5. 渲染：文章卡片列表 ── */
+
+function renderCards(posts, { exportMode = false } = {}) {
   if (!posts.length) {
     return `<div class="empty-state">
       <div class="empty-icon">📭</div>
@@ -66,8 +134,12 @@ function renderCards(posts) {
   }
   return posts.map((p, i) => {
     const col = getColumn(p.column);
+    const checked = _selectedPosts.has(p.id) ? " checked" : "";
     return `
-    <article class="post-card fade-card" style="animation-delay:${i*0.07}s">
+    <article class="post-card fade-card${exportMode ? " selectable-card" : ""}" style="animation-delay:${i*0.07}s" data-id="${p.id}">
+      ${exportMode ? `<label class="card-select-label">
+        <input type="checkbox" class="card-cb" data-id="${p.id}"${checked}><span class="card-cb-text">选择导出</span>
+      </label>` : ""}
       ${p.cover ? `<div class="card-cover"><img src="${escapeHtml(p.cover)}" alt="封面" loading="lazy" onerror="this.parentElement.style.display='none'"></div>` : ""}
       <div class="card-accent-bar" style="background:${cardAccent(p)}"></div>
       <div class="card-body">
@@ -186,6 +258,9 @@ function renderHome({ tag = "", query = "", column = "" } = {}) {
   else if (column) posts = getPostsByColumn(column);
   else             posts = getAllPosts();
 
+  // 记录当前页文章，供全选使用
+  _exportPosts = posts;
+
   const col     = getColumn(column);
   const heading = tag    ? `标签：${decodeURIComponent(tag)}`
                 : query  ? `搜索：${query}`
@@ -194,7 +269,13 @@ function renderHome({ tag = "", query = "", column = "" } = {}) {
 
   const listHtml = _viewMode === "timeline"
     ? renderTimeline(posts)
-    : `<div class="post-list" id="post-list">${renderCards(posts)}</div>`;
+    : `<div class="post-list" id="post-list">${renderCards(posts, { exportMode: _exportMode })}</div>`;
+
+  // 导出模式下同步工具栏可见性
+  if (_exportMode) {
+    document.getElementById("export-bar")?.classList.remove("hidden");
+    updateExportBar();
+  }
 
   mount(`
     ${!tag && !query && !column ? renderColumnsRow() : ""}
@@ -224,12 +305,18 @@ function renderHome({ tag = "", query = "", column = "" } = {}) {
 
     <div class="list-heading fade-in" style="animation-delay:.18s">
       <h2 class="list-title">${escapeHtml(heading)}</h2>
-      <span class="list-count">${posts.length} 篇</span>
+      <div class="list-heading-right">
+        <span class="list-count">${posts.length} 篇</span>
+        ${_viewMode !== "timeline" ? `<button class="btn btn-ghost btn-sm" id="btn-toggle-export">
+          ${_exportMode ? "✕ 退出导出" : "⬇ 批量导出"}
+        </button>` : ""}
+      </div>
     </div>
 
     ${listHtml}
   `);
 
+  // 搜索
   let timer;
   document.getElementById("search-input").addEventListener("input", e => {
     clearTimeout(timer);
@@ -238,12 +325,34 @@ function renderHome({ tag = "", query = "", column = "" } = {}) {
       navigate(q ? `/search/${encodeURIComponent(q)}` : "/");
     }, 300);
   });
+
+  // 批量导出模式切换
+  document.getElementById("btn-toggle-export")?.addEventListener("click", () => {
+    if (_exportMode) {
+      exitExportMode();
+    } else {
+      enterExportMode(posts);
+    }
+    refresh();
+  });
+
+  // 卡片复选框（事件委托）
+  if (_exportMode) {
+    document.getElementById("post-list")?.addEventListener("change", e => {
+      if (e.target.classList.contains("card-cb")) {
+        const id = e.target.dataset.id;
+        e.target.checked ? _selectedPosts.add(id) : _selectedPosts.delete(id);
+        updateExportBar();
+      }
+    });
+  }
 }
 
 /* ── 9. 页面：文章详情 ── */
 
 function renderPost({ id }) {
   setNavActive("nav-home");
+  exitExportMode(); // 离开首页时退出批量导出模式
   const post = getPost(id);
 
   if (!post) {
@@ -269,6 +378,7 @@ function renderPost({ id }) {
           <button class="btn btn-pin ${post.pinned?"pinned":""}" id="btn-pin">
             ${post.pinned ? "📌 取消置顶" : "📌 置顶"}
           </button>
+          <button class="btn btn-secondary" id="btn-export-post">⬇ 导出 .md</button>
           <a href="#/edit/${post.id}" class="btn btn-secondary">编辑</a>
           <button class="btn btn-danger" id="btn-delete">删除</button>
         </div>
@@ -295,6 +405,7 @@ function renderPost({ id }) {
       <div class="post-actions-bottom">
         <a href="#/" class="btn btn-ghost">← 所有文章</a>
         <div class="post-ops">
+          <button class="btn btn-secondary" id="btn-export-post-bottom">⬇ 导出 .md</button>
           <a href="#/edit/${post.id}" class="btn btn-secondary">编辑文章</a>
           <button class="btn btn-danger" id="btn-delete-bottom">删除文章</button>
         </div>
@@ -307,6 +418,13 @@ function renderPost({ id }) {
     togglePin(id);
     navigate(`/post/${id}`); // 重新渲染详情页
   });
+
+  // 导出单篇
+  const doExport = () => {
+    downloadMd(`${post.title}.md`, buildMdContent(post));
+  };
+  document.getElementById("btn-export-post")?.addEventListener("click", doExport);
+  document.getElementById("btn-export-post-bottom")?.addEventListener("click", doExport);
 
   // 删除
   const doDelete = () => {
@@ -322,6 +440,7 @@ function renderPost({ id }) {
 
 function renderEditor({ id } = {}) {
   setNavActive("nav-new");
+  exitExportMode();
   const post   = id ? getPost(id) : null;
   const isEdit = !!post;
 
@@ -348,7 +467,7 @@ function renderEditor({ id } = {}) {
       <input id="e-title" class="editor-title-input"
              type="text" placeholder="文章标题…" value="${escapeHtml(title)}" />
 
-      <!-- 元数据行：专栏 + 封面图 -->
+      <!-- 元数据行：专栏 + 封面图 + 图片上传 -->
       <div class="editor-meta-row">
         <div class="editor-field">
           <label class="editor-field-label">所属专栏</label>
@@ -362,6 +481,14 @@ function renderEditor({ id } = {}) {
           <input id="e-cover" class="editor-field-input" type="url"
                  placeholder="https://images.unsplash.com/…"
                  value="${escapeHtml(cover)}" />
+        </div>
+        <div class="editor-field editor-field-full">
+          <label class="editor-field-label">插入图片（上传到正文）</label>
+          <div class="img-upload-wrap">
+            <button type="button" class="btn btn-ghost btn-sm" id="btn-img-upload">📷 选择图片</button>
+            <input type="file" id="e-img-file" accept="image/*" style="display:none">
+            <span class="img-upload-hint" id="img-upload-hint">支持 JPG / PNG / GIF · 单张最大 2 MB · 以 base64 嵌入正文</span>
+          </div>
         </div>
       </div>
 
@@ -438,6 +565,48 @@ function renderEditor({ id } = {}) {
       : `<p class="preview-empty">暂无内容</p>`;
   });
 
+  // 图片上传
+  document.getElementById("btn-img-upload").addEventListener("click", () => {
+    document.getElementById("e-img-file").click();
+  });
+  document.getElementById("e-img-file").addEventListener("change", e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const hint = document.getElementById("img-upload-hint");
+    if (file.size > 2 * 1024 * 1024) {
+      hint.textContent = "❌ 图片超过 2 MB，请压缩后重试";
+      hint.style.color = "var(--danger)";
+      e.target.value = "";
+      return;
+    }
+    hint.textContent = "⏳ 处理中…";
+    hint.style.color = "";
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const dataUrl  = ev.target.result;
+      const altName  = file.name.replace(/\.[^.]+$/, "");
+      const snippet  = `\n\n![${altName}](${dataUrl})\n\n`;
+      const start    = contentArea.selectionStart;
+      contentArea.value =
+        contentArea.value.substring(0, start) + snippet +
+        contentArea.value.substring(start);
+      contentArea.selectionStart = contentArea.selectionEnd = start + snippet.length;
+      contentArea.focus();
+      refreshCount();
+      hint.textContent = `✅ ${file.name} 已插入正文`;
+      setTimeout(() => {
+        hint.textContent = "支持 JPG / PNG / GIF · 单张最大 2 MB · 以 base64 嵌入正文";
+        hint.style.color = "";
+      }, 3000);
+    };
+    reader.onerror = () => {
+      hint.textContent = "❌ 读取失败，请重试";
+      hint.style.color = "var(--danger)";
+    };
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  });
+
   // 保存
   document.getElementById("btn-save").addEventListener("click", () => {
     const title   = document.getElementById("e-title").value.trim();
@@ -466,6 +635,7 @@ function renderEditor({ id } = {}) {
 
 function renderTeam() {
   setNavActive("nav-team");
+  exitExportMode();
 
   const members = [
     {
@@ -602,6 +772,22 @@ document.addEventListener("DOMContentLoaded", () => {
   // 功能初始化
   initDarkMode();
   initViewToggle();
+
+  // 导出工具栏按钮（工具栏在 #app 外，只需绑定一次）
+  document.getElementById("btn-export-do")?.addEventListener("click", exportSelectedPosts);
+  document.getElementById("btn-export-exit")?.addEventListener("click", () => {
+    exitExportMode(); refresh();
+  });
+  document.getElementById("btn-export-all")?.addEventListener("click", () => {
+    _exportPosts.forEach(p => _selectedPosts.add(p.id));
+    document.querySelectorAll(".card-cb").forEach(cb => { cb.checked = true; });
+    updateExportBar();
+  });
+  document.getElementById("btn-export-none")?.addEventListener("click", () => {
+    _selectedPosts.clear();
+    document.querySelectorAll(".card-cb").forEach(cb => { cb.checked = false; });
+    updateExportBar();
+  });
 
   // 写入种子数据（仅首次）
   seedIfEmpty();

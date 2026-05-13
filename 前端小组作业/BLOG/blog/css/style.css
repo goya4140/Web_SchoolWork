@@ -353,6 +353,8 @@ body.dark .nav-icon-btn { background: rgba(255,255,255,0.07); }
 }
 .list-title { font-size: 1.05rem; font-weight: 700; flex: 1; }
 .list-count  { font-size: 0.82rem; color: var(--muted); }
+/* 右侧操作区（计数 + 批量导出按钮） */
+.list-heading-right { display: flex; align-items: center; gap: 10px; }
 
 /* ============================================================
    文章卡片（毛玻璃）
@@ -763,6 +765,110 @@ body.dark .editor-field-select option { background: #161b27; }
   transition: background var(--trans);
 }
 body.dark .footer { background: rgba(10,14,28,0.6); }
+
+/* ============================================================
+   批量导出工具栏（固定底部）
+   ============================================================ */
+.export-bar {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  z-index: 90;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-top: 2px solid var(--accent);
+  box-shadow: 0 -4px 24px rgba(37, 99, 235, 0.14);
+  padding: 12px 24px;
+  transition: transform 0.3s ease;
+}
+body.dark .export-bar {
+  background: rgba(10, 14, 28, 0.92);
+}
+.export-bar-inner {
+  max-width: calc(var(--max-w) + 120px);
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.export-bar-count {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+.export-bar-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* ── 小号按钮 ── */
+.btn-sm {
+  padding: 5px 12px;
+  font-size: 0.8rem;
+  border-radius: 6px;
+}
+
+/* ── 列表标题行右侧（计数 + 批量导出按钮） ── */
+.list-heading-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* ── 卡片导出模式 ── */
+.selectable-card {
+  border-color: var(--accent);
+}
+.card-select-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 24px 0;
+  cursor: pointer;
+  user-select: none;
+}
+.card-cb {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.card-cb-text {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+/* ── 编辑器：图片上传行 ── */
+.editor-field-full {
+  grid-column: 1 / -1;
+}
+.img-upload-wrap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.img-upload-hint {
+  font-size: 0.78rem;
+  color: var(--muted);
+  transition: color var(--trans);
+}
+
+/* ── Markdown 渲染：图片样式 ── */
+.md-img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+  margin: 12px 0;
+  display: block;
+  box-shadow: var(--shadow);
+}
 
 /* ============================================================
    进入动画 & 进度条
