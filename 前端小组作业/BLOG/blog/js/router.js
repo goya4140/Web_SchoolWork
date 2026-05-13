@@ -78,3 +78,6 @@ function startRouter() {
   window.addEventListener("hashchange", _dispatch);
   _dispatch();
 }
+
+/** 原地重新分发当前路由（视图切换时用，不触发 hashchange） */
+function refresh() { _dispatch(); }

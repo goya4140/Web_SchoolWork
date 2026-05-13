@@ -1,45 +1,32 @@
 /* ============================================================
-   store.js — localStorage 数据层
-   职责：对博客文章进行持久化存储，提供完整的 CRUD 操作
-   技术：localStorage 作为本地"数据库"，JSON 序列化存取
-
-   对应 SQL 概念：
-     getAllPosts()     → SELECT * FROM posts ORDER BY createdAt DESC
-     getPost(id)       → SELECT * FROM posts WHERE id = ?
-     createPost(data)  → INSERT INTO posts VALUES (...)
-     updatePost(id, d) → UPDATE posts SET ... WHERE id = ?
-     deletePost(id)    → DELETE FROM posts WHERE id = ?
-     searchPosts(q)    → SELECT * FROM posts WHERE title LIKE ? OR content LIKE ?
-     getPostsByTag(t)  → SELECT * FROM posts WHERE tags CONTAINS ?
-     getAllTags()       → SELECT tag, COUNT(*) FROM post_tags GROUP BY tag
+   store.js — localStorage 数据层 (v2)
+   新增字段：cover（封面图URL）、column（专栏ID）、pinned（置顶）
+   新增接口：togglePin、getPostsByColumn
    ============================================================ */
 
 const DB_KEY = "wlh_blog_posts";
 
 /* ── 工具函数 ── */
 
-/** 生成唯一 ID：时间戳 + 随机后缀，碰撞概率极低 */
 function genId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 }
 
-/** 从正文提取纯文字摘要（去除 Markdown 标记） */
 function makeExcerpt(content, len = 130) {
   const plain = content
-    .replace(/```[\s\S]*?```/g, "")   // 去掉代码块
-    .replace(/`[^`]+`/g, "")          // 去掉行内代码
-    .replace(/#{1,6}\s/g, "")         // 去掉标题标记
-    .replace(/[*_>~]/g, "")           // 去掉粗斜体等标记
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1") // 去掉链接，保留文字
-    .replace(/\n+/g, " ")             // 换行转空格
+    .replace(/```[\s\S]*?```/g, "")
+    .replace(/`[^`]+`/g, "")
+    .replace(/#{1,6}\s/g, "")
+    .replace(/[*_>~]/g, "")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/\n+/g, " ")
     .trim();
   return plain.length > len ? plain.slice(0, len) + "…" : plain;
 }
 
-/** 估算文章字数 */
 function countWords(content) {
   const cjk = (content.match(/[一-鿿]/g) || []).length;
-  const eng = (content.match(/\b[a-zA-Z]+\b/g) || []).length;
+  const eng  = (content.match(/\b[a-zA-Z]+\b/g) || []).length;
   return cjk + eng;
 }
 
@@ -56,22 +43,19 @@ function _writeDB(posts) {
 
 /* ── CRUD 接口 ── */
 
-/** SELECT * — 返回全部文章，按创建时间倒序 */
+/** 返回全部文章：置顶优先，再按创建时间倒序 */
 function getAllPosts() {
-  return _readDB().sort((a, b) => b.createdAt - a.createdAt);
+  return _readDB().sort((a, b) => {
+    if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1;
+    return b.createdAt - a.createdAt;
+  });
 }
 
-/** SELECT WHERE id — 按 ID 查找单篇文章，不存在则返回 null */
 function getPost(id) {
   return _readDB().find(p => p.id === id) || null;
 }
 
-/**
- * INSERT — 新建文章
- * @param {{ title: string, content: string, tags: string[] }} data
- * @returns {object} 新建的文章对象
- */
-function createPost({ title, content, tags }) {
+function createPost({ title, content, tags, cover = "", column = "", pinned = false }) {
   const posts = _readDB();
   const now = Date.now();
   const post = {
@@ -81,6 +65,9 @@ function createPost({ title, content, tags }) {
     excerpt:   makeExcerpt(content),
     wordCount: countWords(content),
     tags:      tags.map(t => t.trim()).filter(Boolean),
+    cover:     cover.trim(),
+    column:    column || "",
+    pinned:    !!pinned,
     createdAt: now,
     updatedAt: now
   };
@@ -89,11 +76,7 @@ function createPost({ title, content, tags }) {
   return post;
 }
 
-/**
- * UPDATE WHERE id — 更新文章内容
- * @returns {object|null} 更新后的文章，ID 不存在则返回 null
- */
-function updatePost(id, { title, content, tags }) {
+function updatePost(id, { title, content, tags, cover, column }) {
   const posts = _readDB();
   const idx = posts.findIndex(p => p.id === id);
   if (idx === -1) return null;
@@ -104,21 +87,28 @@ function updatePost(id, { title, content, tags }) {
     excerpt:   makeExcerpt(content),
     wordCount: countWords(content),
     tags:      tags.map(t => t.trim()).filter(Boolean),
+    cover:     cover !== undefined ? cover.trim() : (posts[idx].cover || ""),
+    column:    column !== undefined ? column      : (posts[idx].column || ""),
     updatedAt: Date.now()
   };
   _writeDB(posts);
   return posts[idx];
 }
 
-/** DELETE WHERE id — 删除文章 */
 function deletePost(id) {
   _writeDB(_readDB().filter(p => p.id !== id));
 }
 
-/**
- * 全文搜索 — 在标题、正文、标签中查找关键词
- * 对应 SQL: SELECT * WHERE title LIKE ? OR content LIKE ? OR tags LIKE ?
- */
+/** 切换置顶状态 */
+function togglePin(id) {
+  const posts = _readDB();
+  const idx = posts.findIndex(p => p.id === id);
+  if (idx === -1) return null;
+  posts[idx].pinned = !posts[idx].pinned;
+  _writeDB(posts);
+  return posts[idx];
+}
+
 function searchPosts(query) {
   const q = query.toLowerCase().trim();
   if (!q) return getAllPosts();
@@ -129,16 +119,15 @@ function searchPosts(query) {
   );
 }
 
-/** 按标签筛选 — 对应 SQL: SELECT * WHERE tags CONTAINS ? */
 function getPostsByTag(tag) {
   return getAllPosts().filter(p => p.tags.includes(tag));
 }
 
-/**
- * 聚合统计所有标签及其文章数
- * 对应 SQL: SELECT tag, COUNT(*) FROM post_tags GROUP BY tag ORDER BY count DESC
- * @returns {{ [tag: string]: number }}
- */
+/** 按专栏筛选 */
+function getPostsByColumn(col) {
+  return getAllPosts().filter(p => p.column === col);
+}
+
 function getAllTags() {
   const map = {};
   _readDB().forEach(p => {
@@ -149,7 +138,6 @@ function getAllTags() {
   );
 }
 
-/** 全站统计数据（首页展示用） */
 function getStats() {
   const posts = _readDB();
   return {
@@ -161,17 +149,15 @@ function getStats() {
 
 /* ── 种子数据 ── */
 
-/**
- * 首次打开时写入示例文章，让博客不呈现空状态
- * 仅当数据库为空时执行（幂等）
- */
 function seedIfEmpty() {
   if (_readDB().length > 0) return;
 
   const samples = [
     {
-      title: "关于奖励模型与 RLHF 的一些思考",
-      tags:  ["RLHF", "研究笔记", "AI"],
+      title:  "关于奖励模型与 RLHF 的一些思考",
+      tags:   ["RLHF", "研究笔记", "AI"],
+      column: "research",
+      cover:  "",
       content: `## 背景
 
 RLHF（Reinforcement Learning from Human Feedback）是当前大语言模型对齐的核心技术路线之一。奖励模型（Reward Model）在其中扮演"价值判断者"的角色，负责将人类偏好转化为可微分的信号。
@@ -197,8 +183,10 @@ RLHF（Reinforcement Learning from Human Feedback）是当前大语言模型对�
 > 研究进展慢于预期，但每天都有新的理解，这本身就是收获。`
     },
     {
-      title: "MACM 框架设计日志 #1",
-      tags:  ["MACM", "多智能体", "研究笔记"],
+      title:  "MACM 框架设计日志 #1",
+      tags:   ["MACM", "多智能体", "研究笔记"],
+      column: "research",
+      cover:  "",
       content: `## 动机
 
 Theory of Mind（ToM）—— 即对他人心智状态（信念、意图、知识）的建模能力，是人类社会认知的核心能力。当前大多数多智能体系统缺乏显式的 ToM 推理机制，导致在需要合作、欺骗或信息不对称的任务中表现不佳。
@@ -226,8 +214,11 @@ Agent_i 的信念空间：
 **下周计划**：调研稀疏信念表示（Sparse Belief Representation）的相关工作。`
     },
     {
-      title: "大二上学期复盘",
-      tags:  ["随笔", "复盘", "成长"],
+      title:  "大二上学期复盘",
+      tags:   ["随笔", "复盘", "成长"],
+      column: "review",
+      pinned: true,
+      cover:  "",
       content: `## 总体感受
 
 这个学期是我真正进入科研状态的学期。从最初对 RLHF 的懵懂了解，到现在能够独立设计实验、分析结果，中间经历了大量的阅读和反复试错。
@@ -253,6 +244,5 @@ Agent_i 的信念空间：
     }
   ];
 
-  // 逆序插入，让第一篇在列表最上方
   [...samples].reverse().forEach(s => createPost(s));
 }
