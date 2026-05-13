@@ -19,6 +19,7 @@ let _viewMode = localStorage.getItem("wlh_view_mode") || "cards"; // "cards" | "
 let _exportMode = false;           // 批量导出模式开关
 const _selectedPosts = new Set();  // 已勾选文章 id
 let _exportPosts = [];             // 当前页面可勾选的文章列表
+let _imagesDirHandle = null;       // File System Access API — 图片保存目录句柄（session 级）
 
 /* ── 3. 工具函数 ── */
 
@@ -120,6 +121,53 @@ function updateExportBar() {
   if (countEl) countEl.textContent = `已选 ${n} 篇`;
   const doBtn = document.getElementById("btn-export-do");
   if (doBtn) doBtn.disabled = n === 0;
+}
+
+/* ── 4b. 图片本地存储（File System Access API） ── */
+
+/** 根据原始文件名生成安全的唯一文件名：原名_时间戳.ext */
+function makeImageFilename(file) {
+  const ext  = (file.name.match(/\.([^.]+)$/) || [])[1]?.toLowerCase() || "jpg";
+  const base = file.name
+    .replace(/\.[^.]+$/, "")           // 去掉扩展名
+    .replace(/\s+/g, "_")              // 空格转下划线
+    .replace(/[^\w一-龥-]/g, "") // 只保留字母/数字/中文/下划线/连字符
+    .slice(0, 40) || "image";
+  return `${base}_${Date.now().toString(36)}.${ext}`;
+}
+
+/**
+ * 通过 File System Access API 将图片保存到用户选定的目录。
+ * 首次调用时弹出目录选择器（建议选 blog/images/）。
+ * 返回 { path: "images/filename.ext" } 或 null（用户取消 / 浏览器不支持）。
+ */
+async function saveImageToLocalDir(file, hint) {
+  if (!("showDirectoryPicker" in window)) return null;
+
+  // 首次上传时向用户申请目录访问权限
+  if (!_imagesDirHandle) {
+    hint.textContent = "📂 请选择图片保存文件夹（建议新建或选择 blog/images/）…";
+    hint.style.color = "";
+    try {
+      _imagesDirHandle = await window.showDirectoryPicker({ mode: "readwrite" });
+    } catch {
+      // 用户点了取消
+      return null;
+    }
+  }
+
+  const filename = makeImageFilename(file);
+  try {
+    const fh       = await _imagesDirHandle.getFileHandle(filename, { create: true });
+    const writable = await fh.createWritable();
+    await writable.write(file);
+    await writable.close();
+    return { path: `${_imagesDirHandle.name}/${filename}`, filename };
+  } catch (err) {
+    console.warn("图片写入失败，重置目录句柄:", err);
+    _imagesDirHandle = null; // 权限可能已失效，下次重新申请
+    return null;
+  }
 }
 
 /* ── 5. 渲染：文章卡片列表 ── */
@@ -487,7 +535,7 @@ function renderEditor({ id } = {}) {
           <div class="img-upload-wrap">
             <button type="button" class="btn btn-ghost btn-sm" id="btn-img-upload">📷 选择图片</button>
             <input type="file" id="e-img-file" accept="image/*" style="display:none">
-            <span class="img-upload-hint" id="img-upload-hint">支持 JPG / PNG / GIF · 单张最大 2 MB · 以 base64 嵌入正文</span>
+            <span class="img-upload-hint" id="img-upload-hint">首次上传时选择保存目录，图片以相对路径插入正文</span>
           </div>
         </div>
       </div>
@@ -569,42 +617,69 @@ function renderEditor({ id } = {}) {
   document.getElementById("btn-img-upload").addEventListener("click", () => {
     document.getElementById("e-img-file").click();
   });
-  document.getElementById("e-img-file").addEventListener("change", e => {
+  document.getElementById("e-img-file").addEventListener("change", async e => {
     const file = e.target.files[0];
     if (!file) return;
-    const hint = document.getElementById("img-upload-hint");
-    if (file.size > 2 * 1024 * 1024) {
-      hint.textContent = "❌ 图片超过 2 MB，请压缩后重试";
-      hint.style.color = "var(--danger)";
-      e.target.value = "";
+    e.target.value = ""; // 允许重复选同一文件
+
+    const hint    = document.getElementById("img-upload-hint");
+    const altName = file.name.replace(/\.[^.]+$/, "");
+
+    const setErr = msg => { hint.textContent = msg; hint.style.color = "var(--danger)"; };
+    const resetHint = () => {
+      hint.textContent = "首次上传时选择保存目录，图片以相对路径插入正文";
+      hint.style.color = "";
+    };
+
+    // ── 方式一：File System Access API（保存为真实文件，相对路径）──
+    if ("showDirectoryPicker" in window) {
+      hint.textContent = "⏳ 正在保存图片…";
+      hint.style.color = "";
+
+      const result = await saveImageToLocalDir(file, hint);
+
+      if (result) {
+        // 成功写入文件：插入相对路径
+        const snippet = `\n\n![${altName}](${result.path})\n\n`;
+        const start   = contentArea.selectionStart;
+        contentArea.value =
+          contentArea.value.substring(0, start) + snippet +
+          contentArea.value.substring(start);
+        contentArea.selectionStart = contentArea.selectionEnd = start + snippet.length;
+        contentArea.focus();
+        refreshCount();
+        hint.textContent = `✅ 已保存至 ${result.path}，路径已插入正文`;
+        hint.style.color = "";
+        setTimeout(resetHint, 4000);
+        return;
+      }
+
+      // 用户取消了目录选择 → 降级到 base64
+      hint.textContent = "⚠️ 未选择保存目录，改用 base64 嵌入（.md 文件会包含图片数据）";
+      hint.style.color = "#d97706";
+    }
+
+    // ── 方式二：降级 — base64 嵌入（浏览器不支持 API 或用户取消目录选择）──
+    const MAX_B64 = 2 * 1024 * 1024; // base64 模式限 2 MB
+    if (file.size > MAX_B64) {
+      setErr("❌ 图片超过 2 MB，且未选择保存目录；请压缩图片或重新选择目录");
       return;
     }
-    hint.textContent = "⏳ 处理中…";
-    hint.style.color = "";
+
     const reader = new FileReader();
     reader.onload = ev => {
-      const dataUrl  = ev.target.result;
-      const altName  = file.name.replace(/\.[^.]+$/, "");
-      const snippet  = `\n\n![${altName}](${dataUrl})\n\n`;
-      const start    = contentArea.selectionStart;
+      const snippet = `\n\n![${altName}](${ev.target.result})\n\n`;
+      const start   = contentArea.selectionStart;
       contentArea.value =
         contentArea.value.substring(0, start) + snippet +
         contentArea.value.substring(start);
       contentArea.selectionStart = contentArea.selectionEnd = start + snippet.length;
       contentArea.focus();
       refreshCount();
-      hint.textContent = `✅ ${file.name} 已插入正文`;
-      setTimeout(() => {
-        hint.textContent = "支持 JPG / PNG / GIF · 单张最大 2 MB · 以 base64 嵌入正文";
-        hint.style.color = "";
-      }, 3000);
+      setTimeout(resetHint, 4000);
     };
-    reader.onerror = () => {
-      hint.textContent = "❌ 读取失败，请重试";
-      hint.style.color = "var(--danger)";
-    };
+    reader.onerror = () => setErr("❌ 读取失败，请重试");
     reader.readAsDataURL(file);
-    e.target.value = "";
   });
 
   // 保存
