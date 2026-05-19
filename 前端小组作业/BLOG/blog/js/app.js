@@ -20,6 +20,7 @@ let _exportMode = false;           // 批量导出模式开关
 const _selectedPosts = new Set();  // 已勾选文章 id
 let _exportPosts = [];             // 当前页面可勾选的文章列表
 let _imagesDirHandle = null;       // File System Access API — 图片保存目录句柄（session 级）
+let _draftInterval   = null;       // 草稿自动保存定时器句柄
 
 /* ── 3. 工具函数 ── */
 
@@ -484,6 +485,115 @@ function renderPost({ id }) {
   document.getElementById("btn-delete-bottom")?.addEventListener("click", doDelete);
 }
 
+/* ── 4c. 草稿自动保存 ── */
+
+const DRAFT_KEY = "wlh_editor_draft";
+
+function saveDraft(title, content, tags, cover, column) {
+  if (!title && !content) return;
+  localStorage.setItem(DRAFT_KEY, JSON.stringify({ title, content, tags, cover, column, savedAt: Date.now() }));
+}
+
+function loadDraft() {
+  try {
+    const d = JSON.parse(localStorage.getItem(DRAFT_KEY));
+    if (!d) return null;
+    if (Date.now() - d.savedAt > 72 * 3600 * 1000) { clearDraft(); return null; }
+    return d;
+  } catch { return null; }
+}
+
+function clearDraft() { localStorage.removeItem(DRAFT_KEY); }
+
+/* ── 4d. Markdown 工具栏：光标处插入 / 包裹 / 行首切换 ── */
+
+function tbAction(ta, mode, prefix, suffix, placeholder) {
+  suffix      = suffix      ?? "";
+  placeholder = placeholder ?? "";
+  const start = ta.selectionStart;
+  const end   = ta.selectionEnd;
+  const val   = ta.value;
+  const sel   = val.slice(start, end);
+  let newVal, newStart, newEnd;
+
+  if (mode === "wrap") {
+    const inner = sel || placeholder;
+    newVal   = val.slice(0, start) + prefix + inner + suffix + val.slice(end);
+    newStart = start + prefix.length;
+    newEnd   = newStart + inner.length;
+  } else if (mode === "line") {
+    const lineStart = val.lastIndexOf("\n", start - 1) + 1;
+    const lineEndIdx = val.indexOf("\n", start);
+    const lineEnd2  = lineEndIdx === -1 ? val.length : lineEndIdx;
+    const lineText  = val.slice(lineStart, lineEnd2);
+    if (lineText.startsWith(prefix)) {
+      newVal   = val.slice(0, lineStart) + lineText.slice(prefix.length) + val.slice(lineEnd2);
+      newStart = newEnd = Math.max(lineStart, start - prefix.length);
+    } else {
+      newVal   = val.slice(0, lineStart) + prefix + lineText + val.slice(lineEnd2);
+      newStart = newEnd = start + prefix.length;
+    }
+  } else if (mode === "codeblock") {
+    const inner = sel || "代码内容";
+    const block = "```\n" + inner + "\n```";
+    newVal   = val.slice(0, start) + block + val.slice(end);
+    newStart = start + 4;
+    newEnd   = start + 4 + inner.length;
+  } else { // "insert"
+    newVal   = val.slice(0, start) + prefix + val.slice(start);
+    newStart = newEnd = start + prefix.length;
+  }
+
+  ta.value = newVal;
+  ta.selectionStart = newStart;
+  ta.selectionEnd   = newEnd;
+  ta.focus();
+  ta.dispatchEvent(new Event("input"));
+}
+
+/* ── 4e. 图片文件插入（拖拽 / 粘贴 / 按钮 共用） ── */
+
+async function insertMdImage(file, contentArea, hintEl) {
+  const altName = file.name.replace(/\.[^.]+$/, "");
+  const setHint = (msg, color = "") => { hintEl.textContent = msg; hintEl.style.color = color; };
+  const resetHint = () => setHint("拖拽 / 粘贴或点击按钮插入图片，首次需选择保存目录");
+
+  if ("showDirectoryPicker" in window) {
+    setHint("⏳ 正在保存图片…");
+    const result = await saveImageToLocalDir(file, hintEl);
+    if (result) {
+      const snippet = `\n\n![${altName}](${result.path})\n\n`;
+      const pos = contentArea.selectionStart;
+      contentArea.value = contentArea.value.slice(0, pos) + snippet + contentArea.value.slice(pos);
+      contentArea.selectionStart = contentArea.selectionEnd = pos + snippet.length;
+      contentArea.focus();
+      contentArea.dispatchEvent(new Event("input"));
+      setHint(`✅ 已保存至 ${result.path}`);
+      setTimeout(resetHint, 4000);
+      return;
+    }
+    setHint("⚠️ 未选择目录，改用 base64 嵌入", "#d97706");
+  }
+
+  const MAX_B64 = 2 * 1024 * 1024;
+  if (file.size > MAX_B64) {
+    setHint("❌ 超过 2 MB，请先选择目录或压缩图片", "var(--danger)");
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const snippet = `\n\n![${altName}](${ev.target.result})\n\n`;
+    const pos = contentArea.selectionStart;
+    contentArea.value = contentArea.value.slice(0, pos) + snippet + contentArea.value.slice(pos);
+    contentArea.selectionStart = contentArea.selectionEnd = pos + snippet.length;
+    contentArea.focus();
+    contentArea.dispatchEvent(new Event("input"));
+    setTimeout(resetHint, 4000);
+  };
+  reader.onerror = () => setHint("❌ 读取失败，请重试", "var(--danger)");
+  reader.readAsDataURL(file);
+}
+
 /* ── 10. 页面：编辑器（新建 & 编辑复用） ── */
 
 function renderEditor({ id } = {}) {
@@ -502,6 +612,8 @@ function renderEditor({ id } = {}) {
     `<option value="${c.id}" ${column===c.id?"selected":""}>${c.icon} ${c.name}</option>`
   ).join("");
 
+  clearInterval(_draftInterval);
+
   mount(`
     <div class="editor-wrap fade-in">
       <div class="editor-header">
@@ -509,8 +621,15 @@ function renderEditor({ id } = {}) {
         <div class="editor-tabs">
           <button class="tab-btn tab-active" id="tab-write">编辑</button>
           <button class="tab-btn" id="tab-preview">预览</button>
+          <button class="tab-btn" id="tab-split">分栏</button>
         </div>
       </div>
+
+      ${!isEdit ? `<div class="draft-banner hidden" id="draft-banner">
+        <span id="draft-banner-msg"></span>
+        <button type="button" class="btn btn-sm btn-secondary" id="draft-restore">恢复草稿</button>
+        <button type="button" class="btn btn-sm btn-ghost" id="draft-dismiss">忽略</button>
+      </div>` : ""}
 
       <input id="e-title" class="editor-title-input"
              type="text" placeholder="文章标题…" value="${escapeHtml(title)}" />
@@ -531,11 +650,11 @@ function renderEditor({ id } = {}) {
                  value="${escapeHtml(cover)}" />
         </div>
         <div class="editor-field editor-field-full">
-          <label class="editor-field-label">插入图片（上传到正文）</label>
+          <label class="editor-field-label">插入图片到正文</label>
           <div class="img-upload-wrap">
             <button type="button" class="btn btn-ghost btn-sm" id="btn-img-upload">📷 选择图片</button>
             <input type="file" id="e-img-file" accept="image/*" style="display:none">
-            <span class="img-upload-hint" id="img-upload-hint">首次上传时选择保存目录，图片以相对路径插入正文</span>
+            <span class="img-upload-hint" id="img-upload-hint">拖拽 / 粘贴或点击按钮插入图片，首次需选择保存目录</span>
           </div>
         </div>
       </div>
@@ -548,14 +667,35 @@ function renderEditor({ id } = {}) {
       </div>
       <div class="tag-row tag-preview-row" id="tag-preview"></div>
 
-      <div class="editor-pane" id="pane-write">
-        <textarea id="e-content" class="editor-textarea"
-                  placeholder="开始写作…（支持 Markdown 语法）"
-        >${escapeHtml(content)}</textarea>
-        <div class="editor-hint">支持 Markdown · # 标题 · **粗体** · \`代码\` · > 引用 · - 列表</div>
-      </div>
-      <div class="editor-pane hidden" id="pane-preview">
-        <div class="preview-body markdown-body" id="preview-body"></div>
+      <div class="editor-panes" id="editor-panes">
+        <div class="editor-pane" id="pane-write">
+          <div class="md-editor-area">
+            <div class="md-toolbar" id="md-toolbar">
+              <button type="button" class="md-tb-btn" data-action="h1" title="一级标题">H1</button>
+              <button type="button" class="md-tb-btn" data-action="h2" title="二级标题">H2</button>
+              <button type="button" class="md-tb-btn" data-action="h3" title="三级标题">H3</button>
+              <span class="md-tb-sep"></span>
+              <button type="button" class="md-tb-btn" data-action="bold" title="粗体"><b>B</b></button>
+              <button type="button" class="md-tb-btn" data-action="italic" title="斜体"><i>I</i></button>
+              <button type="button" class="md-tb-btn md-tb-mono" data-action="code" title="行内代码">\`x\`</button>
+              <button type="button" class="md-tb-btn md-tb-mono" data-action="codeblock" title="代码块">&#96;&#96;&#96;</button>
+              <span class="md-tb-sep"></span>
+              <button type="button" class="md-tb-btn" data-action="quote" title="引用">❝</button>
+              <button type="button" class="md-tb-btn" data-action="ul" title="无序列表">• —</button>
+              <button type="button" class="md-tb-btn" data-action="ol" title="有序列表">1.</button>
+              <span class="md-tb-sep"></span>
+              <button type="button" class="md-tb-btn" data-action="link" title="链接">🔗</button>
+              <button type="button" class="md-tb-btn" data-action="hr" title="分隔线">—</button>
+            </div>
+            <textarea id="e-content" class="editor-textarea editor-textarea-tooled"
+                      placeholder="开始写作… 支持拖拽 / 粘贴图片 · Markdown 语法"
+            >${escapeHtml(content)}</textarea>
+          </div>
+          <div class="editor-hint">支持拖拽或粘贴图片插入 · # 标题 · **粗体** · \`代码\` · > 引用 · - 列表</div>
+        </div>
+        <div class="editor-pane hidden" id="pane-preview">
+          <div class="preview-body markdown-body" id="preview-body"></div>
+        </div>
       </div>
 
       <div class="editor-footer">
@@ -571,7 +711,7 @@ function renderEditor({ id } = {}) {
     </div>
   `);
 
-  // 标签实时预览
+  // ── 标签实时预览 ──
   const tagsInput  = document.getElementById("e-tags");
   const tagPreview = document.getElementById("tag-preview");
   function refreshTagPreview() {
@@ -584,7 +724,7 @@ function renderEditor({ id } = {}) {
   tagsInput.addEventListener("input", refreshTagPreview);
   refreshTagPreview();
 
-  // 字数统计
+  // ── 字数统计 ──
   const contentArea = document.getElementById("e-content");
   const wordCounter = document.getElementById("word-counter");
   function refreshCount() {
@@ -595,94 +735,144 @@ function renderEditor({ id } = {}) {
   contentArea.addEventListener("input", refreshCount);
   refreshCount();
 
-  // 编辑/预览切换
+  // ── 编辑 / 预览 / 分栏 切换 ──
+  const editorPanes = document.getElementById("editor-panes");
   const paneWrite   = document.getElementById("pane-write");
   const panePreview = document.getElementById("pane-preview");
   const tabWrite    = document.getElementById("tab-write");
   const tabPreview  = document.getElementById("tab-preview");
+  const tabSplit    = document.getElementById("tab-split");
   const previewBody = document.getElementById("preview-body");
-  tabWrite.addEventListener("click", () => {
-    paneWrite.classList.remove("hidden"); panePreview.classList.add("hidden");
-    tabWrite.classList.add("tab-active"); tabPreview.classList.remove("tab-active");
-  });
-  tabPreview.addEventListener("click", () => {
-    paneWrite.classList.add("hidden"); panePreview.classList.remove("hidden");
-    tabWrite.classList.remove("tab-active"); tabPreview.classList.add("tab-active");
+  let   _splitDebounce = null;
+
+  function renderPreview() {
     previewBody.innerHTML = contentArea.value.trim()
       ? renderMarkdown(contentArea.value)
       : `<p class="preview-empty">暂无内容</p>`;
+  }
+  function onContentForSplit() {
+    clearTimeout(_splitDebounce);
+    _splitDebounce = setTimeout(renderPreview, 300);
+  }
+  function setTabMode(mode) {
+    tabWrite.classList.toggle("tab-active",   mode === "write");
+    tabPreview.classList.toggle("tab-active", mode === "preview");
+    tabSplit.classList.toggle("tab-active",   mode === "split");
+    editorPanes.classList.toggle("split-mode", mode === "split");
+    paneWrite.classList.toggle("hidden",   mode === "preview");
+    panePreview.classList.toggle("hidden", mode === "write");
+    if (mode !== "write") renderPreview();
+    if (mode === "split") {
+      contentArea.addEventListener("input", onContentForSplit);
+    } else {
+      contentArea.removeEventListener("input", onContentForSplit);
+    }
+  }
+  tabWrite.addEventListener("click",   () => setTabMode("write"));
+  tabPreview.addEventListener("click", () => setTabMode("preview"));
+  tabSplit.addEventListener("click",   () => setTabMode("split"));
+
+  // ── Markdown 工具栏 ──
+  document.getElementById("md-toolbar").addEventListener("click", e => {
+    const btn = e.target.closest("[data-action]");
+    if (!btn) return;
+    switch (btn.dataset.action) {
+      case "h1":        tbAction(contentArea, "line",      "# ");                         break;
+      case "h2":        tbAction(contentArea, "line",      "## ");                        break;
+      case "h3":        tbAction(contentArea, "line",      "### ");                       break;
+      case "bold":      tbAction(contentArea, "wrap",      "**", "**", "粗体文字");       break;
+      case "italic":    tbAction(contentArea, "wrap",      "*",  "*",  "斜体文字");       break;
+      case "code":      tbAction(contentArea, "wrap",      "`",  "`",  "代码");           break;
+      case "codeblock": tbAction(contentArea, "codeblock", "");                           break;
+      case "quote":     tbAction(contentArea, "line",      "> ");                         break;
+      case "ul":        tbAction(contentArea, "line",      "- ");                         break;
+      case "ol":        tbAction(contentArea, "line",      "1. ");                        break;
+      case "link":      tbAction(contentArea, "wrap",      "[", "](链接地址)", "链接文字"); break;
+      case "hr":        tbAction(contentArea, "insert",    "\n\n---\n\n");                break;
+    }
   });
 
-  // 图片上传
+  // ── 图片上传（按钮） ──
+  const hintEl = document.getElementById("img-upload-hint");
   document.getElementById("btn-img-upload").addEventListener("click", () => {
     document.getElementById("e-img-file").click();
   });
   document.getElementById("e-img-file").addEventListener("change", async e => {
     const file = e.target.files[0];
     if (!file) return;
-    e.target.value = ""; // 允许重复选同一文件
-
-    const hint    = document.getElementById("img-upload-hint");
-    const altName = file.name.replace(/\.[^.]+$/, "");
-
-    const setErr = msg => { hint.textContent = msg; hint.style.color = "var(--danger)"; };
-    const resetHint = () => {
-      hint.textContent = "首次上传时选择保存目录，图片以相对路径插入正文";
-      hint.style.color = "";
-    };
-
-    // ── 方式一：File System Access API（保存为真实文件，相对路径）──
-    if ("showDirectoryPicker" in window) {
-      hint.textContent = "⏳ 正在保存图片…";
-      hint.style.color = "";
-
-      const result = await saveImageToLocalDir(file, hint);
-
-      if (result) {
-        // 成功写入文件：插入相对路径
-        const snippet = `\n\n![${altName}](${result.path})\n\n`;
-        const start   = contentArea.selectionStart;
-        contentArea.value =
-          contentArea.value.substring(0, start) + snippet +
-          contentArea.value.substring(start);
-        contentArea.selectionStart = contentArea.selectionEnd = start + snippet.length;
-        contentArea.focus();
-        refreshCount();
-        hint.textContent = `✅ 已保存至 ${result.path}，路径已插入正文`;
-        hint.style.color = "";
-        setTimeout(resetHint, 4000);
-        return;
-      }
-
-      // 用户取消了目录选择 → 降级到 base64
-      hint.textContent = "⚠️ 未选择保存目录，改用 base64 嵌入（.md 文件会包含图片数据）";
-      hint.style.color = "#d97706";
-    }
-
-    // ── 方式二：降级 — base64 嵌入（浏览器不支持 API 或用户取消目录选择）──
-    const MAX_B64 = 2 * 1024 * 1024; // base64 模式限 2 MB
-    if (file.size > MAX_B64) {
-      setErr("❌ 图片超过 2 MB，且未选择保存目录；请压缩图片或重新选择目录");
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = ev => {
-      const snippet = `\n\n![${altName}](${ev.target.result})\n\n`;
-      const start   = contentArea.selectionStart;
-      contentArea.value =
-        contentArea.value.substring(0, start) + snippet +
-        contentArea.value.substring(start);
-      contentArea.selectionStart = contentArea.selectionEnd = start + snippet.length;
-      contentArea.focus();
-      refreshCount();
-      setTimeout(resetHint, 4000);
-    };
-    reader.onerror = () => setErr("❌ 读取失败，请重试");
-    reader.readAsDataURL(file);
+    e.target.value = "";
+    await insertMdImage(file, contentArea, hintEl);
   });
 
-  // 保存
+  // ── 图片上传（拖拽） ──
+  contentArea.addEventListener("dragover", e => {
+    if ([...e.dataTransfer.types].includes("Files")) {
+      e.preventDefault();
+      contentArea.classList.add("drag-over");
+    }
+  });
+  contentArea.addEventListener("dragleave", e => {
+    if (!contentArea.contains(e.relatedTarget)) contentArea.classList.remove("drag-over");
+  });
+  contentArea.addEventListener("drop", async e => {
+    contentArea.classList.remove("drag-over");
+    const imgs = [...e.dataTransfer.files].filter(f => f.type.startsWith("image/"));
+    if (!imgs.length) return;
+    e.preventDefault();
+    for (const f of imgs) await insertMdImage(f, contentArea, hintEl);
+  });
+
+  // ── 图片上传（粘贴 Ctrl+V） ──
+  contentArea.addEventListener("paste", async e => {
+    const imgs = [...e.clipboardData.items].filter(i => i.type.startsWith("image/"));
+    if (!imgs.length) return;
+    e.preventDefault();
+    for (const item of imgs) {
+      const f = item.getAsFile();
+      if (f) await insertMdImage(f, contentArea, hintEl);
+    }
+  });
+
+  // ── 草稿自动保存（仅新建模式） ──
+  if (!isEdit) {
+    const draft = loadDraft();
+    if (draft?.content || draft?.title) {
+      const bannerEl = document.getElementById("draft-banner");
+      const msgEl    = document.getElementById("draft-banner-msg");
+      const ago = Math.round((Date.now() - draft.savedAt) / 60000);
+      msgEl.textContent = `发现 ${ago < 1 ? "刚刚" : ago + " 分钟前"} 的未保存草稿`;
+      bannerEl.classList.remove("hidden");
+      document.getElementById("draft-restore").addEventListener("click", () => {
+        document.getElementById("e-title").value = draft.title   || "";
+        contentArea.value                          = draft.content || "";
+        tagsInput.value                            = draft.tags   || "";
+        document.getElementById("e-cover").value  = draft.cover  || "";
+        document.getElementById("e-column").value = draft.column || "";
+        refreshCount(); refreshTagPreview();
+        bannerEl.classList.add("hidden");
+      });
+      document.getElementById("draft-dismiss").addEventListener("click", () => {
+        clearDraft(); bannerEl.classList.add("hidden");
+      });
+    }
+
+    function autoSaveDraft() {
+      if (!document.getElementById("e-title")) { clearInterval(_draftInterval); return; }
+      const t = document.getElementById("e-title").value.trim();
+      const c = contentArea.value.trim();
+      if (t || c) saveDraft(t, c, tagsInput.value.trim(),
+        document.getElementById("e-cover").value.trim(),
+        document.getElementById("e-column").value);
+    }
+    _draftInterval = setInterval(autoSaveDraft, 30000);
+    let _draftDebounce = null;
+    contentArea.addEventListener("input", () => {
+      clearTimeout(_draftDebounce);
+      _draftDebounce = setTimeout(autoSaveDraft, 5000);
+    });
+  }
+
+  // ── 保存 / 发布 ──
   document.getElementById("btn-save").addEventListener("click", () => {
     const title   = document.getElementById("e-title").value.trim();
     const tags    = tagsInput.value.split(",").map(t=>t.trim()).filter(Boolean);
@@ -700,6 +890,7 @@ function renderEditor({ id } = {}) {
       setTimeout(() => navigate(`/post/${id}`), 800);
     } else {
       const p = createPost({ title, content, tags, cover, column });
+      clearDraft();
       showHint(hint, "发布成功！正在跳转…", "ok");
       setTimeout(() => navigate(`/post/${p.id}`), 800);
     }

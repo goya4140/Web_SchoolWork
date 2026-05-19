@@ -844,6 +844,62 @@ body.dark .export-bar {
   color: var(--accent);
 }
 
+/* ── 编辑器：分栏实时预览 ── */
+.editor-panes { display: block; }
+.editor-panes.split-mode {
+  display: flex; gap: 14px; align-items: flex-start;
+}
+.editor-panes.split-mode .editor-pane {
+  flex: 1; min-width: 0;
+}
+@media (max-width: 700px) {
+  .editor-panes.split-mode { flex-direction: column; }
+}
+
+/* ── 编辑器：Markdown 工具栏 ── */
+.md-editor-area { display: flex; flex-direction: column; }
+.md-toolbar {
+  display: flex; align-items: center; gap: 2px; flex-wrap: wrap;
+  padding: 6px 10px;
+  border: 1.5px solid var(--border); border-bottom: none;
+  border-radius: 8px 8px 0 0;
+  background: var(--bg-card);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  transition: border-color var(--trans);
+}
+.editor-textarea-tooled {
+  border-top-left-radius: 0 !important;
+  border-top-right-radius: 0 !important;
+}
+.md-tb-btn {
+  padding: 4px 8px; border-radius: 5px; border: none;
+  font-size: .8rem; font-weight: 700; cursor: pointer;
+  background: transparent; color: var(--text);
+  transition: background var(--trans), color var(--trans);
+  min-width: 28px; line-height: 1.4; text-align: center; user-select: none;
+}
+.md-tb-btn:hover { background: var(--accent); color: #fff; }
+.md-tb-mono { font-family: "Cascadia Code", "JetBrains Mono", monospace; font-size: .75rem; }
+.md-tb-sep { width: 1px; height: 16px; background: var(--border); margin: 0 4px; flex-shrink: 0; }
+
+/* ── 编辑器：拖拽图片高亮 ── */
+.editor-textarea.drag-over {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 3px rgba(37,99,235,.15) !important;
+  background: rgba(37,99,235,.03);
+}
+
+/* ── 编辑器：草稿恢复横幅 ── */
+.draft-banner {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 10px 14px;
+  background: rgba(37,99,235,.07); border: 1.5px solid rgba(37,99,235,.28);
+  border-radius: 8px; margin-bottom: 14px;
+  font-size: .85rem; color: var(--text);
+}
+.draft-banner span { flex: 1; min-width: 0; }
+
 /* ── 编辑器：图片上传行 ── */
 .editor-field-full {
   grid-column: 1 / -1;
